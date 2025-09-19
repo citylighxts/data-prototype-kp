@@ -32,41 +32,65 @@ st.dataframe(df_sla_mapping)
 uploaded_file = st.file_uploader("Upload file Excel", type=["xlsx", "xls"])
 
 if uploaded_file is not None:
+    progress = st.progress(0)
+    status_text = st.empty()
+    total_steps = 6
+    current_step = 0
+
+    status_text.text("Membaca file Excel...")
     df = pd.read_excel(uploaded_file)
+    current_step += 1
+    progress.progress(int(current_step/total_steps*100))
 
     # Buat kolom baru "Business criticality-Severity"
+    status_text.text("Membuat kolom Business criticality-Severity...")
     if 'Business criticality' in df.columns and 'Severity' in df.columns:
         df['Business criticality-Severity'] = (
             df['Business criticality'].astype(str) + " - " + df['Severity'].astype(str)
         )
+    current_step += 1
+    progress.progress(int(current_step/total_steps*100))
 
     # Buat kolom baru "Waktu SLA"
+    status_text.text("Mapping Waktu SLA...")
     if 'Business criticality-Severity' in df.columns:
         df['Waktu SLA'] = df['Business criticality-Severity'].map(sla_mapping)
+    current_step += 1
+    progress.progress(int(current_step/total_steps*100))
 
     # Buat kolom baru "Target Selesai Baru"
+    status_text.text("Menghitung Target Selesai Baru...")
     if 'Tiket Dibuat' in df.columns and 'Waktu SLA' in df.columns:
         df['Target Selesai Baru'] = pd.to_datetime(df['Tiket Dibuat']) + pd.to_timedelta(
             df['Waktu SLA'].astype(float), unit='h'
         )
+    current_step += 1
+    progress.progress(int(current_step/total_steps*100))
 
     # Buat kolom baru "SLA"
+    status_text.text("Menentukan SLA...")
     if 'Target Selesai Baru' in df.columns and 'Resolved' in df.columns:
-        df['SLA'] = (pd.to_datetime(df['Target Selesai Baru']) <= pd.to_datetime(df['Resolved'])).astype(int)
+        df['SLA'] = (pd.to_datetime(df['Resolved']) <= pd.to_datetime(df['Target Selesai Baru'])).astype(int)
         # 1 berarti on time, 0 berarti terlambat
+    current_step += 1
+    progress.progress(int(current_step/total_steps*100))
 
     # Buat kolom baru "Time Breach"
-    # if SLA = 0, hitung keterlambatan dengan Resolved - Created - Waktu SLA. if SLA = 1, keterlambatan = 0
+    status_text.text("Menghitung Time Breach...")
     if {'SLA','Resolved','Created','Waktu SLA'}.issubset(df.columns):
         df['Time Breach'] = df.apply(
             lambda row: (
                 (pd.to_datetime(row['Resolved'])
                 - pd.to_datetime(row['Created'])
                 - pd.to_timedelta(float(row['Waktu SLA']), unit='h')
-                ).total_seconds() / 3600
+                ).total_seconds() / 86400
             ) if row['SLA'] == 0 else 0,
             axis=1
         )
+    current_step += 1
+    progress.progress(int(current_step/total_steps*100))
+
+    status_text.text("Selesai!")
 
     st.subheader("📊 Data dari Excel:")
     st.dataframe(df)
@@ -76,7 +100,7 @@ if uploaded_file is not None:
     st.download_button(
         "Download CSV hasil",
         data=csv,
-        file_name='data_gabungan.csv',
+        file_name='Hasil_Analisis.csv',
         mime='text/csv'
     )
 else:
