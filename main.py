@@ -78,15 +78,19 @@ if uploaded_file is not None:
     # Buat kolom baru "Time Breach"
     status_text.text("Menghitung Time Breach...")
     if {'SLA','Resolved','Created','Waktu SLA'}.issubset(df.columns):
-        df['Time Breach'] = df.apply(
-            lambda row: (
-                (pd.to_datetime(row['Resolved'])
-                - pd.to_datetime(row['Created'])
-                - pd.to_timedelta(float(row['Waktu SLA']), unit='h')
-                ).total_seconds() / 86400
-            ) if row['SLA'] == 0 else 0,
-            axis=1
-        )
+        def breach(row):
+            if row['SLA'] == 0:
+                delta = (
+                    pd.to_datetime(row['Resolved'])
+                    - pd.to_datetime(row['Created'])
+                    - pd.to_timedelta(float(row['Waktu SLA']), unit='h')
+                )
+                jam = delta.total_seconds() / 3600
+                hari = delta.total_seconds() / 86400
+                return pd.Series({'Time Breach (jam)': jam, 'Time Breach (hari)': hari})
+            else:
+                return pd.Series({'Time Breach (jam)': 0, 'Time Breach (hari)': 0})
+        df[['Time Breach (jam)', 'Time Breach (hari)']] = df.apply(breach, axis=1)
     current_step += 1
     progress.progress(int(current_step/total_steps*100))
 
