@@ -200,6 +200,3 @@ def run():
         )
     else:
         st.info("Silakan upload file Excel di atas")
-
-    if st.button("Main Menu"):
-        import main
