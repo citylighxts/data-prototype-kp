@@ -2,11 +2,34 @@ import streamlit as st
 import pandas as pd
 
 def run():
-    st.title("Data Incident")
-    st.write("Unggah file Excel. Sistem akan membuat kolom: `Businesscriticality-Severity`, `Target SLA (jam)`, `Target Selesai`, `SLA`.")
+    st.markdown(
+            """
+            <h1 style="display: flex; align-items: center; gap: 10px;">
+                <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f4ca.svg" 
+                    width="40" height="40">
+                Incident Data
+            </h1>
+            """,
+            unsafe_allow_html=True
+        )
+
+    st.write("Upload an Excel file. The system will create columns: `Businesscriticality-Severity`, `Target SLA (jam)`, `Target Selesai`, `SLA`.")
 
     # Upload file
-    uploaded_file = st.file_uploader("Upload file Excel", type=["xlsx", "xls"])
+    uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx", "xls"])
+    if not uploaded_file:
+        st.info("Please upload the Excel file first.")
+        return
+
+    try:
+        df = pd.read_excel(uploaded_file)
+    except Exception as e:
+        st.error(f"Failed to read Excel file: {e}")
+        return
+
+    st.success("File has been successfully read.")
+    st.subheader("Data Preview")
+    st.dataframe(df.head(10))
 
     if uploaded_file is not None:
         progress = st.progress(0)
@@ -14,13 +37,13 @@ def run():
         total_steps = 6
         current_step = 0
 
-        status_text.text("Membaca file Excel...")
+        status_text.text("Reading Excel file...")
         df = pd.read_excel(uploaded_file)
         current_step += 1
         progress.progress(int(current_step/total_steps*100))
 
         # Buat kolom baru "Sum of Time Breach (jam)"
-        status_text.text("Membuat kolom Sum of Time Breach (jam)...")
+        status_text.text("Creating column Sum of Time Breach (hours)...")
         if 'Sum of Time Breach' in df.columns:
             df['Sum of Time Breach (jam)'] = (
                 (df['Sum of Time Breach'] * 24).astype(int).astype(str) + " jam " +
@@ -41,7 +64,7 @@ def run():
         # progress.progress(int(current_step/total_steps*100))
 
         # Buat kolom baru "Max of Time Breach (hari)"
-        status_text.text("Membuat kolom Max of Time Breach (hari)...")
+        status_text.text("Creating column Max of Time Breach (days)...")
         if 'Max of Time Breach' in df.columns:
             df['Max of Time Breach (hari)'] = (
                 (df['Max of Time Breach'].astype(int).astype(str) + " hari ") +
@@ -52,14 +75,14 @@ def run():
         progress.progress(int(current_step/total_steps*100))
 
         # Buat kolom baru "Aplikasi"
-        status_text.text("Membuat kolom Aplikasi...")
+        status_text.text("Creating column Application...")
         if 'Row Labels' in df.columns:
             df['Aplikasi'] = df['Row Labels']
         current_step += 1
         progress.progress(int(current_step/total_steps*100))
 
         # Buat kolom baru "SLA Total Tiket setiap Service Offering"
-        status_text.text("Membuat kolom SLA Total Tiket setiap Service Offering...")
+        status_text.text("Creating column SLA Total Tickets per Service Offering...")
         # =IF(((744-(G4*24))/744)<0;0;((744-(G4*24))/744))
         if (((744-(df['Sum of Time Breach']*24))/744).astype(float).all() < 0):
             sla_raw_total = 0
@@ -68,12 +91,12 @@ def run():
                 (((744-(df['Sum of Time Breach']*24))/744).clip(lower=0)).round(4)
             )
         sla_percent_total = (sla_raw_total * 100).round(2).astype(int).astype(str) + "%"
-        df['SLA Total Tiket setiap Service Offering'] = sla_percent_total
+        df['SLA Total Tickets per Service Offering'] = sla_percent_total
         current_step += 1
         progress.progress(int(current_step/total_steps*100))
 
         # Buat kolom baru "SLA Tiket Max breach setiap Service Offering"
-        status_text.text("Membuat kolom SLA Tiket Max breach setiap Service Offering...")
+        status_text.text("Creating column SLA Max Breach Tickets per Service Offering...")
         # =(744-(J4*24))/744
         sla_raw_max = (
             (((744-(df['Max of Time Breach']*24))/744).clip(lower=0)).round(4)
@@ -83,15 +106,15 @@ def run():
         current_step += 1
         progress.progress(int(current_step/total_steps*100))
 
-        status_text.text("Selesai!")
+        status_text.text("Done!")
 
         # Tampilkan top 3 dengan time breach terendah
-        if 'Sum of Time Breach' in df.columns and 'Aplikasi' in df.columns and 'SLA Total Tiket setiap Service Offering' in df.columns:
+        if 'Sum of Time Breach' in df.columns and 'Aplikasi' in df.columns and 'SLA Total Tickets per Service Offering' in df.columns:
             # Ambil nilai unik terkecil (top 3) dari time breach
             unique_breach = df['Sum of Time Breach'].dropna().unique()
             top_breach = sorted(unique_breach)[:3]
             # Filter baris yang termasuk dalam top 3 breach
-            top3 = df[df['Sum of Time Breach'].isin(top_breach)][['Aplikasi', 'Sum of Time Breach', 'SLA Total Tiket setiap Service Offering']].copy()
+            top3 = df[df['Sum of Time Breach'].isin(top_breach)][['Aplikasi', 'Sum of Time Breach', 'SLA Total Tickets per Service Offering']].copy()
             # Buat nomor berdasarkan urutan nilai time breach
             breach_to_no = {v: i+1 for i, v in enumerate(top_breach)}
             top3['No'] = top3['Sum of Time Breach'].map(breach_to_no)
@@ -121,19 +144,19 @@ def run():
                     # ...existing columns...
                     html += f"<td>{row['Aplikasi']}</td>"
                     html += f"<td>{row['Sum of Time Breach']}</td>"
-                    html += f"<td>{row['SLA Total Tiket setiap Service Offering']}</td>"
+                    html += f"<td>{row['SLA Total Tickets per Service Offering']}</td>"
                     html += "</tr>"
             html += "</tbody></table>"
-            st.subheader("Top 3 Service Offering dengan Time Breach Terendah")
+            st.subheader("Top 3 Service Offerings with the Lowest Time Breach")
             st.markdown(html, unsafe_allow_html=True)
 
         # Tampilkan bottom 3 dengan time breach tertinggi
-        if 'Sum of Time Breach' in df.columns and 'Aplikasi' in df.columns and 'SLA Total Tiket setiap Service Offering' in df.columns:
+        if 'Sum of Time Breach' in df.columns and 'Aplikasi' in df.columns and 'SLA Total Tickets per Service Offering' in df.columns:
             # Ambil nilai unik terbesar (bottom 3) dari time breach
             unique_breach = df['Sum of Time Breach'].dropna().unique()
             bottom_breach = sorted(unique_breach, reverse=True)[:3]
             # Filter baris yang termasuk dalam bottom 3 breach
-            bottom3 = df[df['Sum of Time Breach'].isin(bottom_breach)][['Aplikasi', 'Sum of Time Breach', 'SLA Total Tiket setiap Service Offering']].copy()
+            bottom3 = df[df['Sum of Time Breach'].isin(bottom_breach)][['Aplikasi', 'Sum of Time Breach', 'SLA Total Tickets per Service Offering']].copy()
             # Buat nomor berdasarkan urutan nilai time breach
             breach_to_no = {v: i+1 for i, v in enumerate(sorted(bottom_breach, reverse=True))}
             bottom3['No'] = bottom3['Sum of Time Breach'].map(breach_to_no)
@@ -163,19 +186,19 @@ def run():
                     # ...existing columns...
                     html += f"<td>{row['Aplikasi']}</td>"
                     html += f"<td>{row['Sum of Time Breach']}</td>"
-                    html += f"<td>{row['SLA Total Tiket setiap Service Offering']}</td>"
+                    html += f"<td>{row['SLA Total Tickets per Service Offering']}</td>"
                     html += "</tr>"
             html += "</tbody></table>"
-            st.subheader("Bottom 3 Service Offering dengan Time Breach Tertinggi")
+            st.subheader("Bottom 3 Service Offerings with the Highest Time Breach")
             st.markdown(html, unsafe_allow_html=True)
 
         # bar chart judul "SLA Total Tiket setiap Service Offering", x = Aplikasi, y = SLA Total Tiket setiap Service Offering
-        if 'Aplikasi' in df.columns and 'SLA Total Tiket setiap Service Offering' in df.columns:
-            sla_chart = df[['Aplikasi', 'SLA Total Tiket setiap Service Offering']].dropna().copy()
+        if 'Aplikasi' in df.columns and 'SLA Total Tickets per Service Offering' in df.columns:
+            sla_chart = df[['Aplikasi', 'SLA Total Tickets per Service Offering']].dropna().copy()
             # Ubah kolom SLA ke format numerik
-            sla_chart['SLA Numeric'] = sla_chart['SLA Total Tiket setiap Service Offering'].str.rstrip('%').astype(float)
+            sla_chart['SLA Numeric'] = sla_chart['SLA Total Tickets per Service Offering'].str.rstrip('%').astype(float)
             sla_chart = sla_chart.sort_values('SLA Numeric', ascending=False)
-            st.subheader("SLA Total Tiket setiap Service Offering")
+            st.subheader("SLA Total Tickets per Service Offering")
             st.bar_chart(sla_chart.set_index('Aplikasi')['SLA Numeric'])
 
         # bar chart judul "SLA Tiket Max breach setiap Service Offering", x = Aplikasi, y = SLA Tiket Max breach setiap Service Offering
@@ -187,16 +210,16 @@ def run():
             st.subheader("SLA Tiket Max breach setiap Service Offering")
             st.bar_chart(sla_max_chart.set_index('Aplikasi')['SLA Max Numeric'])
 
-        st.subheader("Data dari Excel:")
+        st.subheader("Data from Excel:")
         st.dataframe(df)
 
         # Download CSV hasil
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button(
-            "Download CSV hasil",
+            "Download Result CSV",
             data=csv,
             file_name='Hasil_Analisis.csv',
             mime='text/csv'
         )
     else:
-        st.info("Silakan upload file Excel di atas")
+        st.info("Please upload an Excel file above")
