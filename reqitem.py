@@ -33,6 +33,44 @@ def run():
     st.subheader("Preview data")
     st.dataframe(df.head(10))
 
+    # === Tambahan: Filter Regional & Tanggal ===
+    possible_name_cols = ['Name', 'Nama', 'User Name']
+    name_col = next((c for c in possible_name_cols if c in df.columns), None)
+
+    if name_col:
+        st.subheader("🗂️ Filter Data")
+
+        # --- Filter Regional ---
+        regional_option = st.radio(
+            "Pilih Regional:",
+            options=["All", "Regional 3"],
+            horizontal=True,
+            key="regional_filter"
+        )
+
+        if regional_option == "Regional 3":
+            df = df[df[name_col].astype(str).str.contains("Regional 3", case=False, na=False)]
+
+        # --- Filter Bulan & Tahun ---
+        possible_date_cols = ['Tiket Dibuat', 'Tiket dibuat', 'Created', 'Created Date', 'CreatedAt']
+        date_created_col = next((c for c in possible_date_cols if c in df.columns), None)
+
+        if date_created_col:
+            df[date_created_col] = pd.to_datetime(df[date_created_col], errors='coerce')
+
+            # ambil semua kombinasi bulan-tahun yang ada
+            df['Bulan-Tahun'] = df[date_created_col].dt.strftime('%Y-%m')
+            available_months = sorted(df['Bulan-Tahun'].dropna().unique())
+
+            selected_month = st.selectbox("Pilih Bulan & Tahun:", options=["All"] + available_months, key="month_filter")
+
+            if selected_month != "All":
+                df = df[df['Bulan-Tahun'] == selected_month]
+
+        st.markdown(f"**Jumlah data setelah filter:** {len(df)} baris")
+        st.dataframe(df.head(10))
+
+
     possible_bc_cols = ['Businesscriticality', 'Business criticality', 'Business Criticality', 'BusinessCriticality']
     possible_sev_cols = ['Severity', 'severity', 'SEVERITY']
 
@@ -154,8 +192,8 @@ def run():
     st.dataframe(top5)
 
     # === Contact Type & Item ===
-    possible_contact_cols = ['Contact Type', 'ContactType', 'Contact type']
-    contact_col = next((c for c in possible_contact_cols if c in df.columns), None)
+    possible_contacttype_cols = ['Contact Type', 'ContactType', 'Contact type']
+    contact_col = next((c for c in possible_contacttype_cols if c in df.columns), None)
 
     if contact_col:
         contact_summary = df[contact_col].value_counts(dropna=False).reset_index()
@@ -163,6 +201,7 @@ def run():
         top3_contact = contact_summary.head(3)
 
         st.subheader("📞 Analisis Contact Type")
+        st.markdown("**Top 3 analisis tipe kontak**")
         st.dataframe(top3_contact)
         fig_contact = px.pie(top3_contact, names='Tipe Kontak', values='Jumlah', hole=0.4, title='Top 3 Contact Type')
         st.plotly_chart(fig_contact)
@@ -176,7 +215,7 @@ def run():
             top5_item.columns = ['Item', 'Jumlah']
             top5_item = top5_item.head(5)
 
-            st.subheader("🧾 Top 5 Item Terbanyak")
+            st.subheader("🧾 Top 5 Item Terbanyak di-Request")
             st.dataframe(top5_item)
 
             fig_item = px.bar(
@@ -189,6 +228,46 @@ def run():
             fig_item.update_traces(textposition='outside')
             fig_item.update_layout(yaxis_range=[0, top5_item['Jumlah'].max() * 1.2])
             st.plotly_chart(fig_item)
+
+        # === Analisis Service Offering ===
+        possible_service_cols = ['Service Offering', 'ServiceOffering', 'Service offering']
+        service_col = next((c for c in possible_service_cols if c in df.columns), None)
+
+        if service_col:
+            st.subheader("🧩 Analisis Service Offering")
+            service_summary = (
+                df[service_col]
+                .dropna()
+                .astype(str)
+                .replace(['', 'None', 'nan', 'NaN'], pd.NA)
+                .dropna()
+                .value_counts()
+                .reset_index()
+            )
+            service_summary.columns = ['Service Offering', 'Jumlah']
+            top3_service = service_summary.head(3)
+
+            st.markdown("**Top 3 Service Offering dengan jumlah tiket terbanyak:**")
+            st.dataframe(top3_service)
+
+            # Visualisasi
+            fig_service = px.bar(
+                top3_service,
+                x='Service Offering',
+                y='Jumlah',
+                text='Jumlah',
+                title='Top 3 Service Offering',
+            )
+            fig_service.update_traces(textposition='outside')
+            fig_service.update_layout(
+                yaxis_range=[0, top3_service['Jumlah'].max() * 1.2],
+                xaxis_tickangle=-45
+            )
+            st.plotly_chart(fig_service)
+
+            # Catatan di bawah grafik
+            st.markdown("<p style='font-style: italic; color: gray;'", unsafe_allow_html=True)
+
 
     # tampilkan hasil akhir
     def sla_status(row):
