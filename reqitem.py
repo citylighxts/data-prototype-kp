@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import io
 import re
 
 def normalize_label(s: str) -> str:
@@ -13,6 +14,13 @@ def normalize_label(s: str) -> str:
     s = re.sub(r'(?<=\D)(?=\d)', ' ', s)
     s = re.sub(r'\s+', ' ', s).strip()
     return s
+
+def to_excel(df):
+    """Convert DataFrame to Excel bytes for download."""
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False)
+    return output.getvalue()
 
 def run():
     st.markdown(
@@ -200,15 +208,12 @@ def run():
     st.subheader("✨ Additional Analysis")
 
     # top 5 kombinasi
-    top5 = (
-        df['Businesscriticality-Severity']
-        .value_counts()
-        .reset_index()
-        .rename(columns={'index': 'Businesscriticality-Severity', 'Businesscriticality-Severity': 'Jumlah'})
-        .head(5)
-    )
+    top5 = df['Businesscriticality-Severity'].value_counts().reset_index()
+    top5.columns = ['Businesscriticality-Severity', 'Jumlah']
+    top5.index = top5.index + 1  # mulai dari 1
+    top5 = top5.head(5)
     st.markdown("**Top 5 most frequent Businesscriticality-Severity combinations:**")
-    st.dataframe(top5)
+    st.markdown(top5.to_html(index=True, justify='left').replace('<td>', '<td style="text-align:left;">'), unsafe_allow_html=True)
 
     # === Contact Type & Item ===
     possible_contacttype_cols = ['Contact Type', 'ContactType', 'Contact type']
@@ -217,11 +222,13 @@ def run():
     if contact_col:
         contact_summary = df[contact_col].value_counts(dropna=False).reset_index()
         contact_summary.columns = ['Tipe Kontak', 'Jumlah']
+        contact_summary.index = contact_summary.index + 1
         top3_contact = contact_summary.head(3)
 
         st.subheader("✨ Contact Type Analysis")
         st.markdown("**Top 3 contact type analysis**")
-        st.dataframe(top3_contact)
+        st.markdown(top3_contact.to_html(index=True, justify='left').replace('<td>', '<td style="text-align:left;">'), unsafe_allow_html=True)
+
         fig_contact = px.pie(top3_contact, names='Tipe Kontak', values='Jumlah', hole=0.4, title='Top 3 Contact Type')
         st.plotly_chart(fig_contact)
         st.markdown("<p style='font-style: italic; color: gray;'>Showing top 3 contact types.</p>", unsafe_allow_html=True)
@@ -232,10 +239,11 @@ def run():
         if item_col:
             top5_item = df[item_col].value_counts(dropna=False).reset_index()
             top5_item.columns = ['Item', 'Jumlah']
+            top5_item.index = top5_item.index + 1
             top5_item = top5_item.head(5)
 
             st.subheader("✨ Top 5 Most Requested Items")
-            st.dataframe(top5_item)
+            st.markdown(top5_item.to_html(index=True, justify='left').replace('<td>', '<td style="text-align:left;">'), unsafe_allow_html=True)
 
             fig_item = px.bar(
                 top5_item,
@@ -264,10 +272,12 @@ def run():
                 .reset_index()
             )
             service_summary.columns = ['Service Offering', 'Jumlah']
+            service_summary.index = service_summary.index + 1
             top3_service = service_summary.head(3)
 
             st.markdown("**Top 3 Service Offerings with the most tickets:**")
-            st.dataframe(top3_service)
+            st.markdown(top3_service.to_html(index=True, justify='left').replace('<td>', '<td style="text-align:left;">'), unsafe_allow_html=True)
+
 
             # Visualisasi
             fig_service = px.bar(
@@ -301,10 +311,16 @@ def run():
 
     df["Status SLA"] = df.apply(sla_status, axis=1)
 
+    st.subheader("🔥 Calculation Result")
     tiket_col = next((c for c in ['No. Tiket', 'Ticket No', 'No Ticket', 'No Tiket', 'Ticket'] if c in df.columns), None)
     show_cols = [col for col in [tiket_col, 'Businesscriticality-Severity', 'Target SLA (jam)', 'Target Selesai', 'SLA'] if col]
-    st.subheader("🔥 Calculation Result")
     st.dataframe(df[show_cols].head(50))
 
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("Download Result CSV", data=csv, file_name="reqitem_hasil.csv", mime="text/csv")
+    # Ganti ke XLSX download
+    excel_bytes = to_excel(df)
+    st.download_button(
+        "Download Result XLSX",
+        data=excel_bytes,
+        file_name="reqitem_hasil.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
