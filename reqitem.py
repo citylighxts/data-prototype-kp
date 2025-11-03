@@ -4,13 +4,6 @@ import plotly.express as px
 import re
 
 def normalize_label(s: str) -> str:
-    """
-    Normalisasi string sehingga berbagai variasi jadi konsisten.
-    Examples:
-      "3-Medium3-Low" -> "3 - Medium - 3 - Low"
-      "3 - Medium - 3 - Low" -> "3 - Medium - 3 - Low"
-      "3-Medium - 3-Low" -> "3 - Medium - 3 - Low"
-    """
     if pd.isna(s):
         return ""
     # ubah ke string, hilangkan leading/trailing space
@@ -28,11 +21,10 @@ def normalize_label(s: str) -> str:
     return s
 
 def run():
-    st.title("📊 Portaverse - Hitung Target SLA & SLA")
-
+    st.title("Request Item")
     st.write("Unggah file Excel. Sistem akan membuat kolom: `Businesscriticality-Severity`, `Target SLA (jam)`, `Target Selesai`, `SLA`.")
 
-    uploaded_file = st.file_uploader("Upload file Excel", type=["xlsx", "xls"], key="portaverse_uploader")
+    uploaded_file = st.file_uploader("Upload file Excel", type=["xlsx", "xls"], key="reqitem_uploader")
     if not uploaded_file:
         st.info("Silakan upload file Excel terlebih dahulu.")
         return
@@ -309,4 +301,4 @@ def run():
     # Download hasil
     st.subheader("Download hasil")
     csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("Download CSV hasil", data=csv, file_name="portaverse_hasil.csv", mime="text/csv")
+    st.download_button("Download CSV hasil", data=csv, file_name="reqitem_hasil.csv", mime="text/csv")

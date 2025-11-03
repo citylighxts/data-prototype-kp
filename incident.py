@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 
 def run():
-    st.title("Upload & Tampilkan Data Excel")
+    st.title("Data Incident")
+    st.write("Unggah file Excel. Sistem akan membuat kolom: `Businesscriticality-Severity`, `Target SLA (jam)`, `Target Selesai`, `SLA`.")
 
     # Upload file
     uploaded_file = st.file_uploader("Upload file Excel", type=["xlsx", "xls"])
