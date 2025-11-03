@@ -31,6 +31,49 @@ def run():
     st.subheader("Data Preview")
     st.dataframe(df.head(10))
 
+    possible_name_cols = ['Name', 'Nama', 'User Name', 'Assigned To', 'Assignee']
+    name_col = next((c for c in possible_name_cols if c in df.columns), None)
+
+    if name_col:
+        st.markdown(
+            """
+            <h1 style="display: flex; align-items: center; gap: 10px;">
+                <img src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/1f9ea.svg" 
+                    width="40" height="40">
+                Data Filter
+            </h1>
+            """,
+            unsafe_allow_html=True
+        )
+
+        # --- Filter Regional ---
+        regional_option = st.radio(
+            "Choose Regional:",
+            options=["All", "Regional 3"],
+            horizontal=True,
+            key="incident_regional_filter"
+        )
+
+        if regional_option == "Regional 3":
+            df = df[df[name_col].astype(str).str.contains("Regional 3", case=False, na=False)]
+
+        # --- Filter Bulan & Tahun ---
+        possible_date_cols = ['Created Date', 'Created', 'Tiket Dibuat', 'Opened', 'CreatedAt']
+        date_created_col = next((c for c in possible_date_cols if c in df.columns), None)
+
+        if date_created_col:
+            df[date_created_col] = pd.to_datetime(df[date_created_col], errors='coerce')
+            df['Bulan-Tahun'] = df[date_created_col].dt.strftime('%Y-%m')
+            available_months = sorted(df['Bulan-Tahun'].dropna().unique())
+
+            selected_month = st.selectbox("Choose Month & Year:", options=["All"] + available_months, key="incident_month_filter")
+            if selected_month != "All":
+                df = df[df['Bulan-Tahun'] == selected_month]
+
+        st.markdown(f"**Data after filter:** {len(df)} rows")
+        st.dataframe(df.head(7))
+
+
     if uploaded_file is not None:
         progress = st.progress(0)
         status_text = st.empty()
