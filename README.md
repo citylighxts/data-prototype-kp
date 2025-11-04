@@ -1,11 +1,11 @@
+for local setup
+```
 python3 -m venv .venv
 source .venv/bin/activate
-pip3 install streamlit pandas matplotlib openpyxl plotly.express
+pip3 install -r requirements.txt
+```
 
-<!-- run streamlit -->
-streamlit hello
-
-<!-- run code streamlit -->
-<!-- streamlit run main.py -->
-streamlit run portaverse.py
-streamlit run incident.py
+for local deploy
+```
+streamlit run main.py
+```
