@@ -155,7 +155,7 @@ def run():
             # - Negatif (-) atau 0 jika achieved (durasi <= alokasi)
             breach = resolution_duration - sla_timedelta
             
-            return breach.total_seconds() / 3600
+            return breach.total_seconds() / (3600*24)
         else:
             # Jika data tanggal/waktu tidak lengkap
             return pd.NA
@@ -405,7 +405,8 @@ def run():
                 if total_alokasi <= 0:
                     return 0.0 # Hindari pembagian dgn nol
                 
-                pencapaian = (total_alokasi - max_breach) / total_alokasi
+                # pencapaian = (total_alokasi - max_breach) / total_alokasi
+                pencapaian = (744 - (max_breach * 24)) / 744
                 
                 hasil_persen = max(0, pencapaian) * 100
                 return hasil_persen
