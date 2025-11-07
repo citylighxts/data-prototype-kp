@@ -324,13 +324,10 @@ def run():
     ], ignore_index=True)
 
     possible_loc_cols = ['Lokasi Pelapor', 'Name', 'User Name', 'Lokasi']
-    possible_date_cols = ['Tiket Dibuat', 'Tiket dibuat', 'Created', 'Created Date', 'CreatedAt']
 
     loc_col = find_column(df_combined_raw.columns, possible_loc_cols)
-    date_created_col = find_column(df_combined_raw.columns, possible_date_cols)
 
     regional_option = "All"
-    selected_month = "All"
 
     if loc_col:
         regional_option = st.radio(
@@ -341,20 +338,6 @@ def run():
         )
     else:
         st.warning("Kolom Lokasi ('Lokasi Pelapor', 'Name', dll.) tidak ditemukan. Filter Regional dinonaktifkan.")
-
-    # **BUG FIX 1: Filter Bulan ditambahkan kembali**
-    if date_created_col:
-        df_combined_raw[date_created_col] = pd.to_datetime(df_combined_raw[date_created_col], errors='coerce')
-        df_combined_raw['Bulan-Tahun'] = df_combined_raw[date_created_col].dt.strftime('%Y-%m')
-        available_months = sorted(df_combined_raw['Bulan-Tahun'].dropna().unique())
-        selected_month = st.selectbox(
-            "Pilih Bulan & Tahun:", 
-            options=["All"] + available_months, 
-            key="month_filter_summary"
-        )
-    else:
-        st.warning("Kolom Tanggal ('Tiket Dibuat', 'Created', dll.) tidak ditemukan. Filter Bulan dinonaktifkan.")
-
 
     # Terapkan filter ke setiap DataFrame
     dataframes_raw = {
@@ -377,16 +360,6 @@ def run():
                 df_filtered = df_filtered[
                     df_filtered[loc_col_in_df].astype(str).str.contains("Regional 3", case=False, na=False)
                 ]
-        
-        # **BUG FIX 1: Logika filter bulan diterapkan**
-        if selected_month != "All":
-            date_col_in_df = find_column(df_filtered.columns, possible_date_cols)
-            if date_col_in_df:
-                # Pastikan kolom tanggal di-konversi sebelum filtering
-                df_filtered[date_col_in_df] = pd.to_datetime(df_filtered[date_col_in_df], errors='coerce')
-                # Buat kolom 'Bulan-Tahun' HANYA untuk filtering
-                bulan_tahun_series = df_filtered[date_col_in_df].dt.strftime('%Y-%m')
-                df_filtered = df_filtered[bulan_tahun_series == selected_month]
         
         dataframes_filtered[name] = df_filtered
         total_rows_after_filter += len(df_filtered)
