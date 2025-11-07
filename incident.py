@@ -63,45 +63,6 @@ def run():
     st.subheader("Data Preview")
     st.dataframe(df.head(10))
 
-    possible_loc_cols = ['Lokasi Pelapor', 'Name', 'User Name', 'Lokasi']
-    loc_col = next((c for c in possible_loc_cols if c in df.columns), None)
-
-    if loc_col:
-        st.markdown(
-            """
-            <h1 style="display: flex; align-items: center; gap: 10px;">
-                <img src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/1f9ea.svg" 
-                    width="40" height="40">
-                Data Filter
-            </h1>
-            """,
-            unsafe_allow_html=True
-        )
-
-        regional_option = st.radio(
-            "Pilih Lokasi/Regional:",
-            options=["All", "Regional 3"],
-            horizontal=True,
-            key="regional_filter_incident"
-        )
-
-        if regional_option == "Regional 3":
-            df = df[df[loc_col].astype(str).str.contains("Regional 3", case=False, na=False)]
-
-        possible_date_cols = ['Tiket Dibuat', 'Tiket dibuat', 'Created', 'Created Date', 'CreatedAt']
-        date_created_col = next((c for c in possible_date_cols if c in df.columns), None)
-
-        if date_created_col:
-            df[date_created_col] = pd.to_datetime(df[date_created_col], errors='coerce')
-            df['Bulan-Tahun'] = df[date_created_col].dt.strftime('%Y-%m')
-            available_months = sorted(df['Bulan-Tahun'].dropna().unique())
-            selected_month = st.selectbox("Pilih Bulan & Tahun:", options=["All"] + available_months, key="month_filter_incident")
-            if selected_month != "All":
-                df = df[df['Bulan-Tahun'] == selected_month]
-
-        st.markdown(f"**Data setelah filter:** {len(df)} baris")
-        st.dataframe(df.head(7))
-
     possible_bc_cols = ['Business criticality', 'Businesscriticality', 'Business criticality', 'BusinessCriticality']
     possible_sev_cols = ['Severity', 'severity', 'SEVERITY']
     bc_col = next((c for c in possible_bc_cols if c in df.columns), None)
