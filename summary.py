@@ -151,6 +151,65 @@ def get_sla_summary(df_processed):
         'total_closed': total_closed
     }
 
+def display_occurrence_table(df_slice, service_col, group_by_col, static_type=None):
+    """
+    Membuat tabel HTML untuk Top 3 Occurrence.
+    Mengembalikan string HTML dari tabel.
+    """
+    
+    # Validasi kolom
+    if not service_col in df_slice.columns:
+        return "<p>Error: Kolom 'Service Offering' tidak ditemukan.</p>"
+    if not static_type and not group_by_col in df_slice.columns:
+        return f"<p>Error: Kolom Kategori ('{group_by_col}') tidak ditemukan.</p>"
+
+    # Lakukan agregasi
+    try:
+        df_agg = df_slice.copy()
+        if static_type:
+            df_agg['Type'] = static_type
+            group_cols = ['Type', service_col]
+        else:
+            df_agg['Type'] = df_agg[group_by_col].fillna('N/A')
+            group_cols = ['Type', service_col]
+        
+        agg = df_agg.groupby(group_cols).size().reset_index(name='Number of Case')
+        agg = agg.sort_values(by=['Type', 'Number of Case'], ascending=[True, False])
+        
+        # Ambil Top 3 *per Tipe*
+        top3_df = agg.groupby('Type').head(3).reset_index(drop=True)
+
+    except Exception as e:
+        return f"<p>Error saat agregasi data: {e}</p>"
+
+    # Buat Tabel HTML
+    html_table = '<table class="manual-sla-table"><thead><tr>'
+    html_table += "<th>Type</th>"
+    html_table += "<th>Top 3 Occurrence</th>"
+    html_table += "<th>Number of Case</th>"
+    html_table += "</tr></thead><tbody>"
+
+    if top3_df.empty:
+        html_table += "<tr><td colspan='3' style='text-align:center;'>Tidak ada data untuk ditampilkan.</td></tr>"
+    else:
+        # Loop berdasarkan 'Type' yang unik untuk membuat rowspan
+        for type_name in top3_df['Type'].unique():
+            group = top3_df[top3_df['Type'] == type_name]
+            rowspan = len(group)
+            
+            for i, (_, row) in enumerate(group.iterrows()):
+                html_table += "<tr>"
+                if i == 0:
+                    # Baris pertama dari grup, tambahkan sel Tipe dengan rowspan
+                    html_table += f"<td rowspan='{rowspan}'>{row['Type']}</td>"
+                # Sel untuk Service Offering dan Number of Case
+                html_table += f"<td>{row[service_col]}</td>"
+                html_table += f"<td>{row['Number of Case']}</td>"
+                html_table += "</tr>"
+    
+    html_table += "</tbody></table>"
+    return html_table
+
 
 # --- Fungsi Utama Streamlit ---
 
@@ -167,6 +226,29 @@ def run():
     )
     st.write("Upload 4 file (Incident & Request untuk Agustus & September) untuk melihat ringkasan gabungan.")
 
+    # === CSS Tabel (didefinisikan sekali) ===
+    css_tabel = """
+    <style>
+        .manual-sla-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+        .manual-sla-table th, .manual-sla-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #EEEEEE;
+            vertical-align: top;
+        }
+        .manual-sla-table th {
+            background-color: #F0F2F6;
+            text-align: left;
+        }
+        .manual-sla-table tr:hover {
+            background-color: #F5F5F5;
+        }
+    </style>
+    """
+    
     # === Mapping SLA (Global) ===
     sla_mapping_hours = {
         '1 - Critical - 1 - High': 4.0,
@@ -223,18 +305,114 @@ def run():
         return
 
     st.success("Berhasil memuat 4 file.")
+
+    # --- 3. Data Filter (Tambahan) ---
+    st.markdown(
+        """
+        <h1 style="display: flex; align-items: center; gap: 10px;">
+            <img src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/1f9ea.svg" 
+                 width="40" height="40">
+            Data Filter (Berlaku untuk semua file)
+        </h1>
+        """,
+        unsafe_allow_html=True
+    )
     
-    # --- 3. Proses SLA untuk semua file (diperlukan untuk line graph & breach table) ---
+    # Gabungkan semua file (hanya untuk mencari opsi filter)
+    df_combined_raw = pd.concat([
+        df_inc_aug_raw, df_inc_sept_raw, df_req_aug_raw, df_req_sept_raw
+    ], ignore_index=True)
+
+    possible_loc_cols = ['Lokasi Pelapor', 'Name', 'User Name', 'Lokasi']
+    possible_date_cols = ['Tiket Dibuat', 'Tiket dibuat', 'Created', 'Created Date', 'CreatedAt']
+
+    loc_col = find_column(df_combined_raw.columns, possible_loc_cols)
+    date_created_col = find_column(df_combined_raw.columns, possible_date_cols)
+
+    regional_option = "All"
+    selected_month = "All"
+
+    if loc_col:
+        regional_option = st.radio(
+            "Pilih Lokasi/Regional:",
+            options=["All", "Regional 3"],
+            horizontal=True,
+            key="regional_filter_summary"
+        )
+    else:
+        st.warning("Kolom Lokasi ('Lokasi Pelapor', 'Name', dll.) tidak ditemukan. Filter Regional dinonaktifkan.")
+
+    # **BUG FIX 1: Filter Bulan ditambahkan kembali**
+    if date_created_col:
+        df_combined_raw[date_created_col] = pd.to_datetime(df_combined_raw[date_created_col], errors='coerce')
+        df_combined_raw['Bulan-Tahun'] = df_combined_raw[date_created_col].dt.strftime('%Y-%m')
+        available_months = sorted(df_combined_raw['Bulan-Tahun'].dropna().unique())
+        selected_month = st.selectbox(
+            "Pilih Bulan & Tahun:", 
+            options=["All"] + available_months, 
+            key="month_filter_summary"
+        )
+    else:
+        st.warning("Kolom Tanggal ('Tiket Dibuat', 'Created', dll.) tidak ditemukan. Filter Bulan dinonaktifkan.")
+
+
+    # Terapkan filter ke setiap DataFrame
+    dataframes_raw = {
+        "inc_aug": df_inc_aug_raw,
+        "inc_sept": df_inc_sept_raw,
+        "req_aug": df_req_aug_raw,
+        "req_sept": df_req_sept_raw
+    }
+    
+    dataframes_filtered = {}
+    total_rows_after_filter = 0
+
+    for name, df in dataframes_raw.items():
+        df_filtered = df.copy()
+        
+        # Apply Regional Filter
+        if regional_option == "Regional 3":
+            loc_col_in_df = find_column(df_filtered.columns, possible_loc_cols)
+            if loc_col_in_df:
+                df_filtered = df_filtered[
+                    df_filtered[loc_col_in_df].astype(str).str.contains("Regional 3", case=False, na=False)
+                ]
+        
+        # **BUG FIX 1: Logika filter bulan diterapkan**
+        if selected_month != "All":
+            date_col_in_df = find_column(df_filtered.columns, possible_date_cols)
+            if date_col_in_df:
+                # Pastikan kolom tanggal di-konversi sebelum filtering
+                df_filtered[date_col_in_df] = pd.to_datetime(df_filtered[date_col_in_df], errors='coerce')
+                # Buat kolom 'Bulan-Tahun' HANYA untuk filtering
+                bulan_tahun_series = df_filtered[date_col_in_df].dt.strftime('%Y-%m')
+                df_filtered = df_filtered[bulan_tahun_series == selected_month]
+        
+        dataframes_filtered[name] = df_filtered
+        total_rows_after_filter += len(df_filtered)
+
+    # Ganti DataFrame asli dengan yang sudah difilter
+    df_inc_aug_raw = dataframes_filtered["inc_aug"]
+    df_inc_sept_raw = dataframes_filtered["inc_sept"]
+    df_req_aug_raw = dataframes_filtered["req_aug"]
+    df_req_sept_raw = dataframes_filtered["req_sept"]
+
+    st.markdown(f"**Total data setelah filter:** {total_rows_after_filter} baris (dari {len(df_combined_raw)} baris awal)")
+    
+    # Hapus df gabungan sementara
+    del df_combined_raw
+
+
+    # --- 4. Proses SLA untuk semua file (diperlukan untuk line graph & breach table) ---
     df_inc_aug = process_sla_dataframe(df_inc_aug_raw, "Incident August", sla_mapping_hours)
     df_inc_sept = process_sla_dataframe(df_inc_sept_raw, "Incident September", sla_mapping_hours)
     df_req_aug = process_sla_dataframe(df_req_aug_raw, "Request August", sla_mapping_hours)
     df_req_sept = process_sla_dataframe(df_req_sept_raw, "Request September", sla_mapping_hours)
 
-    # --- 4. Total Ticket Metrics ---
-    st.subheader("📈 Volume Tiket")
+    # --- 5. Total Ticket Metrics ---
+    st.subheader("📈 Volume Tiket (Setelah Filter)")
 
     # --- Mencari kolom 'resolved' secara dinamis ---
-    # Ini penting agar kode tidak error jika nama kolomnya beda (misal 'Closed')
     possible_resolved_cols = ['Resolved', 'Tiket Ditutup', 'Closed', 'Closed At', 'Tiket ditutup']
     
     inc_res_col_aug = find_column(df_inc_aug.columns, possible_resolved_cols)
@@ -313,21 +491,27 @@ def run():
 
     st.divider()
 
-    # --- 5. Standardize and Combine Channel Data ---
+    # --- 6. Standardize and Combine Channel Data ---
     
     # Tentukan nama kolom channel
     contact_col_incident_names = ['Channel', 'Contact Type', 'ContactType', 'Contact type']
     contact_col_request_names = ['Contact Type', 'ContactType', 'Contact type', 'Channel']
 
-    # Cari kolom channel di setiap file
+    # Cari kolom channel di setiap file (yang sudah difilter)
     col_inc_aug = find_column(df_inc_aug.columns, contact_col_incident_names)
     col_inc_sept = find_column(df_inc_sept.columns, contact_col_incident_names)
     col_req_aug = find_column(df_req_aug.columns, contact_col_request_names)
     col_req_sept = find_column(df_req_sept.columns, contact_col_request_names)
+    
+    df_combined_channel = pd.DataFrame(columns=['Channel']) # Buat df kosong
 
-    if not all([col_inc_aug, col_inc_sept, col_req_aug, col_req_sept]):
-        st.error("Tidak dapat menemukan kolom 'Channel' atau 'Contact Type' di salah satu file. Analisis ESS dan Channel dibatalkan.")
-        df_combined_channel = pd.DataFrame(columns=['Channel']) # Buat df kosong
+    # Periksa apakah SEMUA kolom ditemukan (agar tidak error)
+    all_channel_cols_found = all([col_inc_aug, col_inc_sept, col_req_aug, col_req_sept])
+
+    if not all_channel_cols_found:
+        st.error("Tidak dapat menemukan kolom 'Channel' atau 'Contact Type' di salah satu file (setelah filter). Analisis ESS dan Channel dibatalkan.")
+    elif total_all == 0:
+        st.warning("Tidak ada data tiket setelah filter, Analisis ESS dan Channel dilewati.")
     else:
         # Buat DataFrame ramping gabungan
         df_inc_aug_slim = df_inc_aug[[col_inc_aug]].copy().rename(columns={col_inc_aug: 'Channel'})
@@ -342,7 +526,7 @@ def run():
         df_combined_channel['Channel'] = df_combined_channel['Channel'].fillna('Unknown').astype(str).str.strip()
 
     
-    # --- 6. ESS (Self-Service) Analysis ---
+    # --- 7. ESS (Self-Service) Analysis ---
     st.subheader("💻 Analisis Self-Service (ESS)")
     
     if not df_combined_channel.empty:
@@ -363,7 +547,7 @@ def run():
     else:
         st.warning("Tidak ada data channel untuk dianalisis.")
 
-    # --- 7. Channel Donut Chart (Combined) ---
+    # --- 8. Channel Donut Chart (Combined) ---
     st.subheader("📊 Distribusi Channel (Semua Tiket)")
     
     if not df_combined_channel.empty:
@@ -385,7 +569,7 @@ def run():
         st.warning("Tidak ada data channel untuk ditampilkan.")
         
     
-    # --- 8. SLA Performance Line Graph ---
+    # --- 9. SLA Performance Line Graph ---
     st.subheader("📉 Performa SLA dari Waktu ke Waktu")
 
     # Ambil ringkasan dari DataFrame yang sudah diproses
@@ -433,7 +617,7 @@ def run():
     else:
         st.error("Grafik performa SLA tidak dapat dibuat karena tidak ada tiket yang ditutup (resolved) di semua file.")
 
-    # --- 9. Top 3 Breach Time Table (New Requirement) ---
+    # --- 10. Top 3 Breach Time Table (New Requirement) ---
     st.subheader("🔥 Top 3 Service Offering dengan Max Breach Terbesar")
     
     # Gabungkan semua dataFrame yang telah diproses
@@ -449,6 +633,8 @@ def run():
         st.error("Kolom 'Service Offering' tidak ditemukan di file mana pun. Tidak dapat membuat tabel Top Breach.")
     elif 'Time Breach' not in df_combined_full.columns:
         st.error("Kolom 'Time Breach' gagal dihitung. Tidak dapat membuat tabel Top Breach.")
+    elif df_combined_full.empty:
+        st.warning("Tidak ada data untuk dianalisis di tabel Top Breach (kemungkinan semua terfilter habis).")
     else:
         # Lakukan agregasi sesuai permintaan baru
         sla_service_agg = df_combined_full.groupby(service_col).agg(
@@ -477,28 +663,7 @@ def run():
         bottom3_sla.columns = ['No', 'Service Offering', 'Max Time Breach', '∑Total Tiket', '∑ Tiket Breach']
 
         # --- Tampilkan Tabel HTML ---
-        css_tabel = """
-        <style>
-            .manual-sla-table {
-                width: 100%;
-                border-collapse: collapse;
-                text-align: left;
-            }
-            .manual-sla-table th, .manual-sla-table td {
-                padding: 8px 10px;
-                border-bottom: 1px solid #EEEEEE;
-                vertical-align: top;
-            }
-            .manual-sla-table th {
-                background-color: #F0F2F6;
-                text-align: left;
-            }
-            .manual-sla-table tr:hover {
-                background-color: #F5F5F5;
-            }
-        </style>
-        """
-        
+        # (CSS didefinisikan di awal fungsi run())
         html_bottom = css_tabel + '<table class="manual-sla-table"><thead><tr>'
         html_bottom += "<th>No</th>"
         html_bottom += "<th>Service Offering</th>"
@@ -507,18 +672,142 @@ def run():
         html_bottom += "<th>∑ Tiket Breach</th>"
         html_bottom += "</tr></thead><tbody>"
 
-        for _, row in bottom3_sla.iterrows():
-            html_bottom += "<tr>"
-            html_bottom += f"<td>{row['No']}</td>"
-            html_bottom += f"<td>{row['Service Offering']}</td>"
-            # Format kolom Max Time Breach
-            html_bottom += f"<td>{format_hari_jam_menit(row['Max Time Breach'])}</td>"
-            html_bottom += f"<td>{row['∑Total Tiket']}</td>"
-            html_bottom += f"<td>{row['∑ Tiket Breach']}</td>"
-            html_bottom += "</tr>"
+        if bottom3_sla.empty:
+            html_bottom += "<tr><td colspan='5' style='text-align:center;'>Tidak ada data breach untuk ditampilkan.</td></tr>"
+        else:
+            for _, row in bottom3_sla.iterrows():
+                html_bottom += "<tr>"
+                html_bottom += f"<td>{row['No']}</td>"
+                html_bottom += f"<td>{row['Service Offering']}</td>"
+                # Format kolom Max Time Breach
+                html_bottom += f"<td>{format_hari_jam_menit(row['Max Time Breach'])}</td>"
+                html_bottom += f"<td>{row['∑Total Tiket']}</td>"
+                html_bottom += f"<td>{row['∑ Tiket Breach']}</td>"
+                html_bottom += "</tr>"
 
         html_bottom += "</tbody></table>"
         st.markdown(html_bottom, unsafe_allow_html=True)
+    
+    
+    # --- 11. Top Occurrence Analysis ---
+    st.subheader("🔎 Top Occurrence Analysis by Category")
+    
+    time_filter_occurrence = st.radio(
+        "Select Time Period for Analysis:", 
+        ["All", "August", "September"], 
+        horizontal=True, 
+        key="top_occurrence_filter"
+    )
+
+    # Tentukan slice data berdasarkan filter
+    if time_filter_occurrence == "August":
+        inc_df_slice = df_inc_aug
+        req_df_slice = df_req_aug
+    elif time_filter_occurrence == "September":
+        inc_df_slice = df_inc_sept
+        # **BUG FIX 2: Typo diperbaiki**
+        req_df_slice = df_req_sept 
+    else: # "All"
+        inc_df_slice = pd.concat([df_inc_aug, df_inc_sept], ignore_index=True)
+        req_df_slice = pd.concat([df_req_aug, df_req_sept], ignore_index=True)
+
+    # Tentukan nama kolom (service_col sudah ada dari section 10)
+    possible_kategori_cols = ['Kategori', 'Category', 'Tipe']
+    # Kita cari di DUA dataframe incident (mentah), karena salah satunya mungkin kosong
+    kategori_col = find_column(df_inc_aug_raw.columns, possible_kategori_cols) or find_column(df_inc_sept_raw.columns, possible_kategori_cols)
+
+    # Tampilkan Tabel Incident
+    st.markdown("<h4>Incident Analysis (Top 3 Occurrence)</h4>", unsafe_allow_html=True)
+    if not kategori_col:
+        st.error("Kolom 'Kategori' tidak ditemukan di file Incident. Tidak dapat membuat tabel.")
+    elif not service_col:
+        st.error("Kolom 'Service Offering' tidak ditemukan. Tidak dapat membuat tabel.")
+    elif inc_df_slice.empty:
+         st.warning("Tidak ada data Insiden untuk periode ini.")
+    else:
+        html_incident = display_occurrence_table(
+            df_slice=inc_df_slice, 
+            service_col=service_col, 
+            group_by_col=kategori_col, 
+            static_type=None
+        )
+        st.markdown(css_tabel + html_incident, unsafe_allow_html=True)
+
+    # Tampilkan Tabel Request
+    st.markdown("<h4>Request Analysis (Top 3 Occurrence)</h4>", unsafe_allow_html=True)
+    if not service_col:
+        st.error("Kolom 'Service Offering' tidak ditemukan. Tidak dapat membuat tabel.")
+    elif req_df_slice.empty:
+        st.warning("Tidak ada data Request untuk periode ini.")
+    else:
+        html_request = display_occurrence_table(
+            df_slice=req_df_slice,
+            service_col=service_col,
+            group_by_col=None,
+            static_type="Request"
+        )
+        st.markdown(css_tabel + html_request, unsafe_allow_html=True)
+
+    
+    # --- 12. Solved vs Active/Pending Status (FITUR BARU) ---
+    st.subheader("📊 Solved vs Active/Pending Status")
+    st.caption(f"Menampilkan status untuk periode: **{time_filter_occurrence}**")
+
+    # Kolom 'kategori_col' sudah ditemukan di section 11
+    # 'inc_df_slice' dan 'req_df_slice' juga sudah di-filter
+    
+    # Kita perlu menemukan kolom resolved *lagi* di dalam slice
+    inc_res_col = find_column(inc_df_slice.columns, possible_resolved_cols)
+    req_res_col = find_column(req_df_slice.columns, possible_resolved_cols)
+
+    if not kategori_col:
+        st.error("Kolom 'Kategori' tidak ditemukan di file Incident. Tidak dapat membuat tabel status.")
+    elif not inc_res_col or not req_res_col:
+        st.error("Kolom 'Resolved' / 'Tiket Ditutup' tidak ditemukan. Tidak dapat membuat tabel status.")
+    elif inc_df_slice.empty and req_df_slice.empty:
+        st.warning("Tidak ada data untuk ditampilkan di tabel status.")
+    else:
+        solved_data = {}
+        active_data = {}
+        
+        # Dapatkan semua Tipe Insiden yang unik
+        incident_types = []
+        if not inc_df_slice.empty:
+            incident_types = sorted(list(inc_df_slice[kategori_col].dropna().unique()))
+        
+        all_table_cols = incident_types + ["Request"]
+        
+        # 1. Hitung data Insiden
+        if not inc_df_slice.empty:
+            for type_name in incident_types:
+                type_mask = (inc_df_slice[kategori_col] == type_name)
+                # Solved = notna()
+                solved_count = inc_df_slice[type_mask & inc_df_slice[inc_res_col].notna()].shape[0]
+                # Active = isna()
+                active_count = inc_df_slice[type_mask & inc_df_slice[inc_res_col].isna()].shape[0]
+                
+                solved_data[type_name] = solved_count
+                active_data[type_name] = active_count
+        
+        # 2. Hitung data Request
+        if not req_df_slice.empty:
+            req_solved_count = req_df_slice[req_df_slice[req_res_col].notna()].shape[0]
+            req_active_count = req_df_slice[req_df_slice[req_res_col].isna()].shape[0]
+        else:
+            req_solved_count = 0
+            req_active_count = 0
+            
+        solved_data["Request"] = req_solved_count
+        active_data["Request"] = req_active_count
+        
+        # 3. Buat DataFrame
+        final_table_data = [solved_data, active_data]
+        df_status = pd.DataFrame(final_table_data, index=["Solved", "Active/Pending"])
+        
+        # Pastikan urutan kolom benar
+        df_status = df_status[all_table_cols]
+        
+        st.dataframe(df_status, use_container_width=True)
 
 
 if __name__ == "__main__":
