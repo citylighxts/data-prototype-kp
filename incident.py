@@ -377,7 +377,33 @@ def run():
 
         html_top += "</tbody></table>"
         st.markdown(html_top, unsafe_allow_html=True)
-        
+
+        # Bottom 3 SLA Service Offering dengan Total Time Breach terbesar
+        sla_service_agg['No_Bottom'] = sla_service_agg['SLA_Pencapaian_%'].rank(method='dense', ascending=True).astype(int)
+        bottom3_sla = sla_service_agg[sla_service_agg['No_Bottom'] <= 3].sort_values(by=['No_Bottom', service_col])
+        bottom3_sla = bottom3_sla[['No_Bottom', service_col, 'Jumlah_Tiket', 'Total_Waktu_Breach', 'SLA_Pencapaian_%']]
+        bottom3_sla.columns = ['No', 'Service Offering', 'Σ Tiket (Closed)', 'Total Waktu Breach (jam)', 'SLA (%)']
+        st.subheader("✨ Bottom Pencapaian SLA berdasarkan Service Offering (Rank 1-3)")
+        html_bottom = css_tabel + '<table class="manual-sla-table"><thead><tr>'
+        html_bottom += "<th>No</th>"
+        html_bottom += "<th>Service Offering</th>"
+        html_bottom += "<th>Σ Tiket (Closed)</th>"
+        html_bottom += "<th>Total Waktu Breach (jam)</th>"
+        html_bottom += "<th>SLA (%)</th>"
+        html_bottom += "</tr></thead><tbody>"
+
+        for _, row in bottom3_sla.iterrows():
+            html_bottom += "<tr>"
+            html_bottom += f"<td>{row['No']}</td>"
+            html_bottom += f"<td>{row['Service Offering']}</td>"
+            html_bottom += f"<td>{row['Σ Tiket (Closed)']}</td>"
+            html_bottom += f"<td>{format_hari_jam_menit(row['Total Waktu Breach (jam)'])}</td>"
+            html_bottom += f"<td>{row['SLA (%)']:.2f} %</td>"
+            html_bottom += "</tr>"
+
+        html_bottom += "</tbody></table>"
+        st.markdown(html_bottom, unsafe_allow_html=True)
+
         st.subheader("📊 SLA Persen per Service Offering")
         
         if 'sla_service_agg' in locals() and service_col in sla_service_agg.columns and 'SLA_Pencapaian_%' in sla_service_agg.columns:
