@@ -685,7 +685,7 @@ def run():
         req_df_slice = pd.concat([df_req_aug, df_req_sept], ignore_index=True)
 
     # Tentukan nama kolom (service_col sudah ada dari section 10)
-    possible_kategori_cols = ['Kategori', 'Category', 'Tipe']
+    possible_kategori_cols = ['Kategori', 'Category', 'Item', 'Tipe']
     # Kita cari di DUA dataframe incident (mentah), karena salah satunya mungkin kosong
     kategori_col = find_column(df_inc_aug_raw.columns, possible_kategori_cols) or find_column(df_inc_sept_raw.columns, possible_kategori_cols)
 
@@ -708,7 +708,9 @@ def run():
 
     # Tampilkan Tabel Request
     st.markdown("<h4>Request Analysis (Top 3 Occurrence)</h4>", unsafe_allow_html=True)
-    if not service_col:
+    if not kategori_col:
+        st.error("Kolom 'Item' tidak ditemukan di file Request. Tidak dapat membuat tabel.")
+    elif not service_col:
         st.error("Kolom 'Service Offering' tidak ditemukan. Tidak dapat membuat tabel.")
     elif req_df_slice.empty:
         st.warning("Tidak ada data Request untuk periode ini.")
@@ -716,7 +718,7 @@ def run():
         html_request = display_occurrence_table(
             df_slice=req_df_slice,
             service_col=service_col,
-            group_by_col=None,
+            group_by_col=kategori_col,
             static_type="Request"
         )
         st.markdown(css_tabel + html_request, unsafe_allow_html=True)
