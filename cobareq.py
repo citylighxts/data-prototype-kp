@@ -1,16 +1,17 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px  # Library baru untuk visualisasi
+import plotly.express as px  # Library untuk visualisasi
 from datetime import datetime, time, timedelta
 import os
 
+# Konfigurasi Halaman
 st.set_page_config(page_title="SLA Analytics Dashboard", layout="wide")
 
 def run():
     st.title("📊 SLA Analytics & Handling Dashboard")
     st.markdown("""
-    **Fitur:** Auto-Fill Data Kosong, Pembersihan Spasi, dan **Visualisasi Dashboard**.
+    **Fitur:** Auto-Fill Data Kosong, Pembersihan Spasi, **SLA Achievement %**, dan Tabel Kompak.
     """)
     st.markdown("---")
     
@@ -40,16 +41,12 @@ def run():
     uploaded_req = st.sidebar.file_uploader("1. File Request Item (.xlsx)", type=["xlsx"])
     
     # --- LOGIKA OTOMATIS BACA FILE MAPPING ---
-    # Tentukan path file secara dinamis berdasarkan lokasi script ini berjalan
     default_sla_path = os.path.join(os.path.dirname(__file__), "data_sc_req_mapping.xlsx")
 
-    # Cek apakah file ada di folder repo
     if os.path.exists(default_sla_path):
         uploaded_sla = default_sla_path
-        # st.sidebar.info(f"✅ Menggunakan File Mapping Default: data_sc_req_mapping.xlsx")
     else:
-        # Jika lupa upload ke repo, munculkan opsi upload manual sebagai cadangan
-        st.sidebar.warning("⚠️ File mapping default tidak ditemukan di folder.")
+        st.sidebar.warning("⚠️ File mapping default tidak ditemukan.")
         uploaded_sla = st.sidebar.file_uploader("2. Upload File Mapping SLA (.xlsx)", type=["xlsx"])
 
     # --- FUNGSI BANTUAN ---
@@ -209,25 +206,33 @@ def run():
                     
                     st.success("✅ Data berhasil diproses!")
                     
-                    # Buat Tab untuk kerapihan
                     tab1, tab2 = st.tabs(["📊 Dashboard Visualisasi", "📄 Data Preview"])
 
                     with tab1:
-                        # --- 1. SLA RECAP (ANGKA & DONUT) ---
+                        # --- 1. SLA RECAP (ANGKA & PERCENTAGE) ---
                         st.subheader("1. SLA Performance Recap")
                         
                         # Hitung Count
                         sla_counts = df_final['SLA'].value_counts()
-                        on_time = sla_counts.get(1, 0)
+                        on_time = sla_counts.get(1, 0)  # AE2064 (SLA Tercapai)
                         late = sla_counts.get(0, 0)
                         wp_pending = sla_counts.get("WP", 0) + sla_counts.get("", 0)
+                        
+                        # AH2064 (Total SLA = On Time + Late)
                         total_calculated = on_time + late
                         
-                        # Metric Cards
-                        c1, c2, c3 = st.columns(3)
-                        c1.metric("On Time (Achieved)", f"{on_time} Tiket", delta="Target", delta_color="normal")
-                        c2.metric("Late (Breached)", f"{late} Tiket", delta="-Attention", delta_color="inverse")
-                        c3.metric("Waiting/Uncalculated", f"{wp_pending} Tiket")
+                        # --- RUMUS EXCEL: =AE2064/AH2064 ---
+                        if total_calculated > 0:
+                            achievement_rate = (on_time / total_calculated) * 100
+                        else:
+                            achievement_rate = 0
+                        
+                        # Metric Cards (Sekarang ada 4 kolom untuk menampilkan Persentase)
+                        c1, c2, c3, c4 = st.columns(4)
+                        c1.metric("🏆 Achievement Rate", f"{achievement_rate:.1f}%", "SLA Performance")
+                        c2.metric("On Time (Achieved)", f"{on_time} Tiket", "Sesuai Target")
+                        c3.metric("Late (Breached)", f"{late} Tiket", "-Terlambat", delta_color="inverse")
+                        c4.metric("Waiting/Uncalculated", f"{wp_pending} Tiket", "Pending")
 
                         # Donut Chart SLA
                         if total_calculated > 0:
@@ -240,7 +245,7 @@ def run():
                                              title="SLA Compliance Rate")
                             st.plotly_chart(fig_sla, use_container_width=True)
                         else:
-                            st.info("Belum ada data SLA yang terhitung (Mungkin semua tiket 'WP').")
+                            st.info("Belum ada data SLA yang terhitung.")
 
                         st.markdown("---")
 
@@ -248,7 +253,7 @@ def run():
                         col_left, col_right = st.columns(2)
 
                         with col_left:
-                            # --- TOP 5 BUSINESS CRITICALITY - SEVERITY ---
+                            # TOP 5 BUSINESS CRITICALITY - SEVERITY
                             st.subheader("2. Top 5 Business Criticality - Severity")
                             if 'Businesscriticality-Severity' in df_final.columns:
                                 top_bc = df_final['Businesscriticality-Severity'].value_counts().head(5).reset_index()
@@ -257,7 +262,7 @@ def run():
                                                 title="Most Frequent Severity Combinations")
                                 st.plotly_chart(fig_bc, use_container_width=True)
                             
-                            # --- TOP 5 REQUESTED ITEMS ---
+                            # TOP 5 REQUESTED ITEMS
                             st.subheader("3. Top 5 Most Requested Items")
                             if col_item in df_final.columns:
                                 top_items = df_final[col_item].value_counts().head(5).reset_index()
@@ -268,7 +273,7 @@ def run():
                                 st.plotly_chart(fig_items, use_container_width=True)
 
                         with col_right:
-                            # --- TOP 4 CONTACT TYPE (DONUT) ---
+                            # TOP 4 CONTACT TYPE
                             st.subheader("4. Top 4 Contact Type Analysis")
                             if col_contact in df_final.columns:
                                 top_contact = df_final[col_contact].value_counts().head(4).reset_index()
@@ -277,7 +282,7 @@ def run():
                                                      title="Channel Pelaporan Terbanyak")
                                 st.plotly_chart(fig_contact, use_container_width=True)
 
-                            # --- TOP 3 SERVICE OFFERING ---
+                            # TOP 3 SERVICE OFFERING
                             st.subheader("5. Top 3 Service Offering Analysis")
                             if col_service in df_final.columns:
                                 top_service = df_final[col_service].value_counts().head(3).reset_index()
@@ -287,9 +292,10 @@ def run():
                                 st.plotly_chart(fig_service, use_container_width=True)
 
                     with tab2:
-                        # --- DATA PREVIEW TABLE ---
+                        # --- DATA PREVIEW TABLE (SEMPIT/KOMPAK) ---
                         st.subheader("📄 Data Preview (Excel Format)")
-                        st.dataframe(df_display, use_container_width=True)
+                        # PERUBAHAN UTAMA: use_container_width=False agar tabel tidak melebar
+                        st.dataframe(df_display, use_container_width=False)
 
                     # --- DOWNLOAD BUTTON ---
                     st.markdown("### 📥 Download Report")
@@ -299,7 +305,8 @@ def run():
                 except Exception as e:
                     st.error(f"Error Proses: {e}")
             else:
-                st.dataframe(df_main)
+                # Tampilkan tabel awal juga dengan mode sempit
+                st.dataframe(df_main, use_container_width=False)
 
         except Exception as e:
             st.error(f"Gagal Baca File: {e}")
