@@ -293,7 +293,7 @@ def run():
                         df_late_full = df_display[df_display['SLA'] == 0]
 
                         if not df_late_full.empty:
-                            st.warning(f"Terdapat {len(df_late_full)} tiket yang melewati target SLA.")
+                            st.info(f"Terdapat {len(df_late_full)} tiket yang melewati target SLA.")
                             # Menampilkan seluruh kolom, dengan mode narrow/kompak (use_container_width=False)
                             st.dataframe(df_late_full, use_container_width=False)
                         else:
