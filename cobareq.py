@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px  # Library untuk visualisasi
+import plotly.express as px
 from datetime import datetime, time, timedelta
 import os
 
@@ -214,11 +214,13 @@ def run():
                         
                         # Hitung Count
                         sla_counts = df_final['SLA'].value_counts()
-                        on_time = sla_counts.get(1, 0)  # AE2064 (SLA Tercapai)
+                        on_time = sla_counts.get(1, 0)
                         late = sla_counts.get(0, 0)
-                        wp_pending = sla_counts.get("WP", 0) + sla_counts.get("", 0)
                         
-                        # AH2064 (Total SLA = On Time + Late)
+                        # Hitung Total Tiket (Untuk Card Paling Kanan)
+                        total_tickets = len(df_final)
+                        
+                        # Hitung Total Calculated (Untuk Persentase)
                         total_calculated = on_time + late
                         
                         # --- RUMUS EXCEL: =AE2064/AH2064 ---
@@ -227,12 +229,13 @@ def run():
                         else:
                             achievement_rate = 0
                         
-                        # Metric Cards (Sekarang ada 4 kolom untuk menampilkan Persentase)
+                        # Metric Cards
                         c1, c2, c3, c4 = st.columns(4)
                         c1.metric("🏆 Achievement Rate", f"{achievement_rate:.1f}%", "SLA Performance")
                         c2.metric("On Time (Achieved)", f"{on_time} Tiket", "Sesuai Target")
                         c3.metric("Late (Breached)", f"{late} Tiket", "-Terlambat", delta_color="inverse")
-                        c4.metric("Waiting/Uncalculated", f"{wp_pending} Tiket", "Pending")
+                        # UBAH DISINI: Menampilkan Total Tiket (Semua Data)
+                        c4.metric("Total Tiket", f"{total_tickets} Tiket", "Total Data")
 
                         # Donut Chart SLA
                         if total_calculated > 0:
@@ -282,19 +285,12 @@ def run():
                                                      title="Channel Pelaporan Terbanyak")
                                 st.plotly_chart(fig_contact, use_container_width=True)
 
-                            # TOP 3 SERVICE OFFERING
-                            st.subheader("5. Top 3 Service Offering Analysis")
-                            if col_service in df_final.columns:
-                                top_service = df_final[col_service].value_counts().head(3).reset_index()
-                                top_service.columns = ['Service', 'Count']
-                                fig_service = px.bar(top_service, x='Service', y='Count', text='Count',
-                                                     title="Top Service Offering", color_discrete_sequence=['#636EFA'])
-                                st.plotly_chart(fig_service, use_container_width=True)
+                            # --- DISINI DULUNYA ADA SERVICE OFFERING (SUDAH DIHAPUS) ---
 
                     with tab2:
                         # --- DATA PREVIEW TABLE (SEMPIT/KOMPAK) ---
                         st.subheader("📄 Data Preview (Excel Format)")
-                        # PERUBAHAN UTAMA: use_container_width=False agar tabel tidak melebar
+                        # use_container_width=False agar tabel tidak melebar
                         st.dataframe(df_display, use_container_width=False)
 
                     # --- DOWNLOAD BUTTON ---
