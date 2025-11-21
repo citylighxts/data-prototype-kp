@@ -8,9 +8,7 @@ import numpy as np
 import calendar
 
 # =========================================================
-# DEFINISI FUNGSI GLOBAL (SEBELUM run())
-# (Fungsi helper normalize_label, format_hari_jam_menit, map_to_hours, get_sla_summary, display_occurrence_table
-# tetap sama persis seperti kode Anda sebelumnya)
+# DEFINISI FUNGSI GLOBAL
 # =========================================================
 
 def find_column(df_cols, possible_names):
@@ -61,7 +59,6 @@ def map_to_hours(label: str, sla_mapping_hours: dict):
 def process_sla_dataframe(df, type_name: str, sla_mapping_hours: dict):
     """
     Fungsi inti untuk menghitung SLA & Time Breach.
-    Fungsi ini SEKARANG juga menambahkan kolom 'Month' (Bulan).
     """
     
     possible_bc_cols = ['Businesscriticality', 'Business criticality', 'Business Criticality', 'BusinessCriticality']
@@ -90,10 +87,9 @@ def process_sla_dataframe(df, type_name: str, sla_mapping_hours: dict):
         df_calc[date_created_col] = pd.to_datetime(df_calc[date_created_col], errors='coerce')
         df_calc[date_resolved_col] = pd.to_datetime(df_calc[date_resolved_col], errors='coerce')
 
-        # --- PERUBAHAN: Tambahkan kolom 'Month' ---
-        df_calc = df_calc.dropna(subset=[date_created_col]) # Hapus data tanpa tanggal dibuat
+        # Tambahkan kolom 'Month'
+        df_calc = df_calc.dropna(subset=[date_created_col]) 
         df_calc['Month'] = df_calc[date_created_col].dt.strftime('%Y-%m (%B)')
-        # ----------------------------------------
 
         df_calc['_bc_raw'] = df_calc[bc_col].astype(str).fillna('').str.strip()
         df_calc['_sev_raw'] = df_calc[sev_col].astype(str).fillna('').str.strip()
@@ -154,14 +150,17 @@ def get_sla_summary(df_processed):
         'total_closed': total_closed
     }
 
-def display_occurrence_table(df_slice, service_col, group_by_col, static_type=None):
+def display_occurrence_table(df_slice, data_col, group_by_col, static_type=None, limit=None):
     """
-    Membuat tabel HTML untuk Top 3 Occurrence.
-    Mengembalikan string HTML dari tabel.
+    Membuat tabel HTML untuk Occurrence.
+    
+    Parameters:
+    - limit: Integer (misal 3) untuk Top N, atau None untuk semua.
     """
     
-    if not service_col in df_slice.columns:
-        return "<p>Error: Kolom 'Service Offering' tidak ditemukan.</p>"
+    if not data_col in df_slice.columns:
+        return f"<p>Error: Kolom data utama ('{data_col}') tidak ditemukan.</p>"
+    
     if not static_type and (not group_by_col or not group_by_col in df_slice.columns):
         return f"<p>Error: Kolom Kategori ('{group_by_col}') tidak ditemukan.</p>"
 
@@ -169,37 +168,45 @@ def display_occurrence_table(df_slice, service_col, group_by_col, static_type=No
         df_agg = df_slice.copy()
         if static_type:
             df_agg['Type'] = static_type
-            group_cols = ['Type', service_col]
+            group_cols = ['Type', data_col]
         else:
             df_agg['Type'] = df_agg[group_by_col].fillna('N/A')
-            group_cols = ['Type', service_col]
+            group_cols = ['Type', data_col]
         
         agg = df_agg.groupby(group_cols).size().reset_index(name='Number of Case')
         agg = agg.sort_values(by=['Type', 'Number of Case'], ascending=[True, False])
         
-        top3_df = agg.groupby('Type').head(3).reset_index(drop=True)
+        # --- LOGIC LIMIT DISINI ---
+        if limit:
+            # Ambil Top N per grup Type
+            final_df = agg.groupby('Type').head(limit).reset_index(drop=True)
+            header_text = f"Top {limit} Occurrence"
+        else:
+            # Ambil Semua
+            final_df = agg.reset_index(drop=True)
+            header_text = "Occurrence (All)"
 
     except Exception as e:
         return f"<p>Error saat agregasi data: {e}</p>"
 
     html_table = '<table class="manual-sla-table"><thead><tr>'
     html_table += "<th>Type</th>"
-    html_table += "<th>Top 3 Occurrence</th>"
+    html_table += f"<th>{header_text} ({data_col})</th>"
     html_table += "<th>Number of Case</th>"
     html_table += "</tr></thead><tbody>"
 
-    if top3_df.empty:
+    if final_df.empty:
         html_table += "<tr><td colspan='3' style='text-align:center;'>Tidak ada data untuk ditampilkan.</td></tr>"
     else:
-        for type_name in top3_df['Type'].unique():
-            group = top3_df[top3_df['Type'] == type_name]
+        for type_name in final_df['Type'].unique():
+            group = final_df[final_df['Type'] == type_name]
             rowspan = len(group)
             
             for i, (_, row) in enumerate(group.iterrows()):
                 html_table += "<tr>"
                 if i == 0:
                     html_table += f"<td rowspan='{rowspan}'>{row['Type']}</td>"
-                html_table += f"<td>{row[service_col]}</td>"
+                html_table += f"<td>{row[data_col]}</td>"
                 html_table += f"<td>{row['Number of Case']}</td>"
                 html_table += "</tr>"
     
@@ -222,7 +229,7 @@ def run():
     )
     st.write("Upload file Incident & Request. Sistem akan otomatis mendeteksi bulan dari data.")
 
-    # === CSS Tabel (didefinisikan sekali) ===
+    # === CSS Tabel ===
     css_tabel = """
     <style>
         .manual-sla-table {
@@ -245,7 +252,7 @@ def run():
     </style>
     """
     
-    # === Mapping SLA (Global) ===
+    # === Mapping SLA ===
     sla_mapping_hours = {
         '1 - Critical - 1 - High': 4.0,
         '1 - Critical - 2 - Medium': 6.0,
@@ -261,12 +268,12 @@ def run():
         '4 - Low - 3 - Low': 48.0
     }
 
-    # --- 1. File Uploaders (DINAMIS) ---
+    # --- 1. File Uploaders ---
     st.subheader("1. Pengaturan File")
     num_months = st.selectbox(
         "Pilih jumlah periode/bulan yang akan dianalisis:",
-        options=list(range(1, 13)), # 1 sampai 12
-        index=1 # Default ke 2 bulan
+        options=list(range(1, 13)),
+        index=1
     )
 
     uploaded_incident_files = []
@@ -290,7 +297,6 @@ def run():
                 key=f"summary_req_{i}"
             )
             uploaded_request_files.append(file_req)
-    # --------------------------------------------------
 
     # --- 2. Check and Load Files ---
     if not all(uploaded_incident_files) or not all(uploaded_request_files):
@@ -306,7 +312,7 @@ def run():
 
     st.success(f"Berhasil memuat {len(list_df_inc_raw)} file Incident dan {len(list_df_req_raw)} file Request.")
 
-    # --- 3. Proses SLA (Menambahkan 'Month' secara otomatis) ---
+    # --- 3. Proses SLA ---
     list_df_inc_processed = []
     list_df_req_processed = []
 
@@ -330,7 +336,6 @@ def run():
         unsafe_allow_html=True
     )
     
-    # Gabungkan SEMUA data mentah hanya untuk mencari kolom
     df_combined_raw = pd.concat(list_df_inc_raw + list_df_req_raw, ignore_index=True)
 
     possible_loc_cols = ['Lokasi Pelapor', 'Name', 'User Name', 'Lokasi']
@@ -345,9 +350,8 @@ def run():
             key="regional_filter_summary"
         )
     else:
-        st.warning("Kolom Lokasi ('Lokasi Pelapor', 'Name', dll.) tidak ditemukan. Filter Regional dinonaktifkan.")
+        st.warning("Kolom Lokasi tidak ditemukan. Filter Regional dinonaktifkan.")
 
-    # Terapkan filter ke DataFrame yang SUDAH DIPROSES
     list_df_inc_filtered = []
     list_df_req_filtered = []
     total_rows_after_filter = 0
@@ -374,10 +378,10 @@ def run():
         list_df_req_filtered.append(df_filtered)
         total_rows_after_filter += len(df_filtered)
 
-    st.markdown(f"**Total data setelah filter:** {total_rows_after_filter} baris (dari {len(df_combined_raw)} baris awal)")
+    st.markdown(f"**Total data setelah filter:** {total_rows_after_filter} baris")
     del df_combined_raw
 
-    # --- 5. Gabungkan Data yang Sudah Difilter ---
+    # --- 5. Gabungkan Data ---
     df_inc_all = pd.concat(list_df_inc_filtered, ignore_index=True)
     df_req_all = pd.concat(list_df_req_filtered, ignore_index=True)
     df_combined_full = pd.concat([df_inc_all, df_req_all], ignore_index=True)
@@ -409,7 +413,7 @@ def run():
 
     st.divider()
 
-    # --- 7. Rincian per Bulan (BAR CHART DINAMIS) ---
+    # --- 7. Rincian per Bulan ---
     st.markdown("<h4>Rincian per Bulan</h4>", unsafe_allow_html=True)
     
     agg_inc_monthly = df_inc_all.groupby('Month').agg(
@@ -424,21 +428,18 @@ def run():
     
     df_monthly_summary = pd.concat([agg_inc_monthly, agg_req_monthly], axis=1).fillna(0).astype(int)
     
-    if 'Incident' not in df_monthly_summary: df_monthly_summary['Incident'] = 0
-    if 'Request' not in df_monthly_summary: df_monthly_summary['Request'] = 0
-    if 'Incident_Aktif' not in df_monthly_summary: df_monthly_summary['Incident_Aktif'] = 0
-    if 'Request_Aktif' not in df_monthly_summary: df_monthly_summary['Request_Aktif'] = 0
+    for col in ['Incident', 'Request', 'Incident_Aktif', 'Request_Aktif']:
+        if col not in df_monthly_summary: df_monthly_summary[col] = 0
 
     df_monthly_summary = df_monthly_summary.sort_index() 
     
-    # Siapkan data untuk plotting
     df_monthly_chart = df_monthly_summary[['Incident', 'Request']].reset_index().melt(
         id_vars='Month', var_name='Type', value_name='Count'
     )
     df_monthly_active_chart = df_monthly_summary[['Incident_Aktif', 'Request_Aktif']].reset_index().melt(
         id_vars='Month', var_name='Type', value_name='Count'
     )
-    month_order = df_monthly_summary.index.tolist() # Dapatkan urutan bulan (YYYY-MM)
+    month_order = df_monthly_summary.index.tolist()
 
     if df_monthly_summary.empty:
         st.warning("Tidak ada data bulanan untuk ditampilkan.")
@@ -454,10 +455,8 @@ def run():
                 color="Type", 
                 barmode="group", 
                 text_auto=True,
-                title="Total Tiket Dibuat per Bulan",
                 category_orders={"Month": month_order} 
             )
-            fig_monthly_total.update_layout(yaxis_title="Jumlah Tiket", xaxis_title="Bulan (YYYY-MM)")
             st.plotly_chart(fig_monthly_total, use_container_width=True)
 
         with col_chart2:
@@ -469,16 +468,13 @@ def run():
                 color="Type",
                 barmode="group",
                 text_auto=True,
-                title="Total Tiket Aktif/Pending per Bulan",
                 category_orders={"Month": month_order}
             )
-            fig_monthly_active.update_layout(yaxis_title="Jumlah Tiket", xaxis_title="Bulan (YYYY-MM)")
             st.plotly_chart(fig_monthly_active, use_container_width=True)
             
     st.divider()
-    # -----------------------------------------------
 
-    # --- 8. Standardize and Combine Channel Data ---
+    # --- 8. Channel Data ---
     contact_col_incident_names = ['Channel', 'Contact Type', 'ContactType', 'Contact type']
     contact_col_request_names = ['Contact Type', 'ContactType', 'Contact type', 'Channel']
 
@@ -487,18 +483,14 @@ def run():
     
     df_combined_channel = pd.DataFrame(columns=['Channel']) 
 
-    if not col_inc or not col_req:
-        st.error("Tidak dapat menemukan kolom 'Channel' atau 'Contact Type' di salah satu file (setelah filter). Analisis ESS dan Channel dibatalkan.")
-    elif total_all == 0:
-        st.warning("Tidak ada data tiket setelah filter, Analisis ESS dan Channel dilewati.")
-    else:
+    if total_all > 0 and col_inc and col_req:
         df_inc_slim = df_inc_all[[col_inc]].copy().rename(columns={col_inc: 'Channel'})
         df_req_slim = df_req_all[[col_req]].copy().rename(columns={col_req: 'Channel'})
 
         df_combined_channel = pd.concat([df_inc_slim, df_req_slim], ignore_index=True)
         df_combined_channel['Channel'] = df_combined_channel['Channel'].fillna('Unknown').astype(str).str.strip()
 
-    # --- 9. ESS (Self-Service) Analysis ---
+    # --- 9. ESS Analysis ---
     st.subheader("💻 Analisis Self-Service (ESS)")
     if not df_combined_channel.empty:
         ess_keywords = ['ess', 'self-service', 'self service']
@@ -506,15 +498,11 @@ def run():
         total_ess_tickets = int(is_ess.sum())
         ess_percentage = (total_ess_tickets / total_all) * 100 if total_all > 0 else 0.0
 
-        st.metric(
-            "Tiket ESS (Self-Service)", 
-            f"{total_ess_tickets:,}",
-            f"{ess_percentage:.1f}% dari semua tiket"
-        )
+        st.metric("Tiket ESS (Self-Service)", f"{total_ess_tickets:,}", f"{ess_percentage:.1f}%")
     else:
         st.warning("Tidak ada data channel untuk dianalisis.")
 
-    # --- 10. Channel Donut Chart (Combined) ---
+    # --- 10. Channel Donut Chart ---
     st.subheader("📊 Distribusi Channel (Semua Tiket)")
     if not df_combined_channel.empty:
         channel_summary = df_combined_channel['Channel'].value_counts().reset_index()
@@ -529,15 +517,12 @@ def run():
         )
         fig_channel.update_traces(textinfo='percent+label')
         st.plotly_chart(fig_channel, use_container_width=True)
-        st.dataframe(channel_summary)
     else:
         st.warning("Tidak ada data channel untuk ditampilkan.")
         
-    
-    # --- 11. SLA Performance Line Graph (DINAMIS) ---
+    # --- 11. SLA Performance Line Graph ---
     st.subheader("📉 Performa SLA dari Waktu ke Waktu")
 
-    # (Gunakan data dari df_monthly_summary yang sudah dibuat)
     inc_sla_monthly = df_inc_all.groupby('Month').apply(get_sla_summary)
     req_sla_monthly = df_req_all.groupby('Month').apply(get_sla_summary)
 
@@ -552,13 +537,9 @@ def run():
     if data_points:
         chart_df = pd.DataFrame(data_points).sort_values(by='Month')
         
-        # Ekstrak nama bulan yang "cantik"
         chart_df['Month_Display'] = chart_df['Month'].str.split('(').str[1].str.replace(')', '') + " " + chart_df['Month'].str.split('-').str[0]
         chart_df = chart_df.sort_values(by='Month')
-        
-        # Dapatkan urutan X-axis yang benar
         month_display_order = chart_df.drop_duplicates(subset=['Month']).set_index('Month').loc[month_order]['Month_Display'].tolist()
-
 
         fig_line = px.line(
             chart_df,
@@ -574,22 +555,17 @@ def run():
         fig_line.update_layout(
             yaxis_title="SLA Achievement (%)",
             xaxis_title="Bulan",
-            legend_title="Tipe Tiket",
             yaxis_range=[0, 105],
             xaxis={'categoryorder':'array', 'categoryarray': month_display_order} 
         )
         st.plotly_chart(fig_line, use_container_width=True)
-
-        st.dataframe(chart_df.pivot(index='Month', columns='Type', values='SLA (%)'))
-
     else:
-        st.error("Grafik performa SLA tidak dapat dibuat karena tidak ada tiket yang ditutup (resolved) di semua file.")
+        st.error("Grafik performa SLA tidak dapat dibuat (data kosong/tidak ada closed).")
 
-    # --- 12. Filter Dinamis (Radio Button) ---
+    # --- 12. Filter Dinamis ---
     st.divider()
     st.subheader("🔎 Analisis Spesifik Berdasarkan Periode")
     
-    # Dapatkan daftar bulan yang unik dari data
     unique_months = sorted(df_combined_full['Month'].dropna().unique().tolist())
     time_filter_options = ["All"] + unique_months
     
@@ -600,7 +576,6 @@ def run():
         key="time_period_filter_summary"
     )
 
-    # Buat DUA set data slice berdasarkan filter
     if time_filter_selection == "All":
         inc_df_slice = df_inc_all
         req_df_slice = df_req_all
@@ -609,9 +584,8 @@ def run():
         req_df_slice = df_req_all[df_req_all['Month'] == time_filter_selection]
 
     df_combined_full_slice = pd.concat([inc_df_slice, req_df_slice], ignore_index=True)
-    # --------------------------------------------------
 
-    # --- 13. Top 3 Breach Time Table (DINAMIS) ---
+    # --- 13. Top 3 Breach Time Table ---
     st.subheader("🔥 Top 3 Service Offering dengan Max Breach Terbesar")
     st.caption(f"Menampilkan data untuk: **{time_filter_selection}**")
     
@@ -619,11 +593,11 @@ def run():
     service_col = find_column(df_combined_full_slice.columns, possible_service_cols)
     
     if not service_col:
-        st.error("Kolom 'Service Offering' tidak ditemukan di file mana pun. Tidak dapat membuat tabel Top Breach.")
+        st.error("Kolom 'Service Offering' tidak ditemukan.")
     elif 'Time Breach' not in df_combined_full_slice.columns:
-        st.error("Kolom 'Time Breach' gagal dihitung. Tidak dapat membuat tabel Top Breach.")
+        st.error("Kolom 'Time Breach' gagal dihitung.")
     elif df_combined_full_slice.empty or df_combined_full_slice['Time Breach'].isna().all():
-        st.warning(f"Tidak ada data breach untuk dianalisis pada periode: {time_filter_selection}")
+        st.warning("Tidak ada data breach untuk dianalisis.")
     else:
         sla_service_agg = df_combined_full_slice.groupby(service_col).agg(
             Max_Time_Breach=('Time Breach', 'max'),
@@ -663,60 +637,69 @@ def run():
         st.markdown(html_bottom, unsafe_allow_html=True)
     
     
-    # --- 14. Top Occurrence Analysis (DINAMIS) ---
-    st.subheader("🔎 Top Occurrence Analysis by Category")
+    # --- 14. Occurrence Analysis (DENGAN PILIHAN) ---
+    st.subheader("🔎 Occurrence Analysis by Category")
     st.caption(f"Menampilkan data untuk: **{time_filter_selection}**")
+    
+    # --- Pilihan Tampilan (Top 3 atau Semua) ---
+    view_mode = st.radio(
+        "Pilih Tampilan Jumlah Data:",
+        ["Top 3 Only", "Show All Data"],
+        horizontal=True,
+        key="view_mode_selector"
+    )
+    
+    # Tentukan limit berdasarkan pilihan
+    limit_val = 3 if view_mode == "Top 3 Only" else None
+    # ------------------------------------------
     
     possible_kategori_cols = ['Kategori', 'Category', 'Item', 'Tipe']
     kategori_col = find_column(df_inc_all.columns, possible_kategori_cols)
     item_col = find_column(df_req_all.columns, possible_kategori_cols)
 
-    st.markdown("<h4>Incident Analysis (Top 3 Occurrence)</h4>", unsafe_allow_html=True)
+    st.markdown("<h4>Incident Analysis</h4>", unsafe_allow_html=True)
     if not kategori_col:
-        st.error("Kolom 'Kategori' tidak ditemukan di file Incident. Tidak dapat membuat tabel.")
+        st.error("Kolom 'Kategori' tidak ditemukan di file Incident.")
     elif not service_col:
-        st.error("Kolom 'Service Offering' tidak ditemukan. Tidak dapat membuat tabel.")
+        st.error("Kolom 'Service Offering' tidak ditemukan.")
     elif inc_df_slice.empty:
          st.warning(f"Tidak ada data Insiden untuk periode: {time_filter_selection}")
     else:
         html_incident = display_occurrence_table(
             df_slice=inc_df_slice, 
-            service_col=service_col, 
+            data_col=service_col, 
             group_by_col=kategori_col, 
-            static_type=None
+            static_type=None,
+            limit=limit_val # Kirim limit sesuai pilihan user
         )
         st.markdown(css_tabel + html_incident, unsafe_allow_html=True)
 
-    st.markdown("<h4>Request Analysis (Top 3 Occurrence)</h4>", unsafe_allow_html=True)
+    st.markdown("<h4>Request Analysis</h4>", unsafe_allow_html=True)
     if not item_col:
-        st.error("Kolom 'Kategori' atau 'Item' tidak ditemukan di file Request. Tidak dapat membuat tabel.")
-    elif not service_col:
-        st.error("Kolom 'Service Offering' tidak ditemukan. Tidak dapat membuat tabel.")
+        st.error("Kolom 'Kategori' atau 'Item' tidak ditemukan di file Request.")
     elif req_df_slice.empty:
         st.warning(f"Tidak ada data Request untuk periode: {time_filter_selection}")
     else:
         html_request = display_occurrence_table(
             df_slice=req_df_slice,
-            service_col=service_col,
-            group_by_col=item_col, 
-            static_type="Request"
+            data_col=item_col,      
+            group_by_col=item_col,   
+            static_type="Request",
+            limit=limit_val # Kirim limit sesuai pilihan user
         )
         st.markdown(css_tabel + html_request, unsafe_allow_html=True)
 
     
-    # --- 15. Solved vs Active/Pending Status (DINAMIS) ---
+    # --- 15. Solved vs Active/Pending Status ---
     st.subheader("📊 Solved vs Active/Pending Status")
     st.caption(f"Menampilkan status untuk periode: **{time_filter_selection}**")
 
-    inc_res_col = find_column(inc_df_slice.columns, possible_resolved_cols)
-    req_res_col = find_column(req_df_slice.columns, possible_resolved_cols)
-
     if not kategori_col:
-        st.error("Kolom 'Kategori' tidak ditemukan di file Incident. Tidak dapat membuat tabel status.")
+        st.error("Kolom 'Kategori' tidak ditemukan.")
     elif not inc_res_col or not req_res_col:
-        st.error("Kolom 'Resolved' / 'Tiket Ditutup' tidak ditemukan. Tidak dapat membuat tabel status.")
+        st.error("Kolom 'Resolved' / 'Tiket Ditutup' tidak ditemukan.")
     elif inc_df_slice.empty and req_df_slice.empty:
-        st.warning(f"Tidak ada data untuk ditampilkan di tabel status untuk periode: {time_filter_selection}")
+        st.warning(f"Tidak ada data untuk ditampilkan.")
     else:
         solved_data = {}
         active_data = {}
@@ -749,9 +732,7 @@ def run():
         df_status = pd.DataFrame(final_table_data, index=["Solved", "Active/Pending"])
         
         df_status = df_status.reindex(columns=all_table_cols, fill_value=0)
-        
         st.dataframe(df_status, use_container_width=True)
-
 
 if __name__ == "__main__":
     run()
