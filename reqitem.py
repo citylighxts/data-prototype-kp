@@ -4,220 +4,261 @@ import plotly.express as px
 import io
 import re
 
-def normalize_label(s: str) -> str:
-    if pd.isna(s):
+# --- 1. FUNGSI BANTUAN (PENTING) ---
+def normalize_text(text):
+    """Membersihkan teks: lowercase, hapus spasi berlebih, ubah ke string"""
+    if pd.isna(text):
         return ""
-    s = str(s).strip()
-    s = re.sub(r'\s+', ' ', s)
-    s = re.sub(r'\s*-\s*', ' - ', s)
-    s = re.sub(r'(?<=\d)(?=[A-Za-z])', ' ', s)
-    s = re.sub(r'(?<=\D)(?=\d)', ' ', s)
-    s = re.sub(r'\s+', ' ', s).strip()
-    return s
+    text = str(text).strip().lower()
+    return text
+
+def clean_id_str(val):
+    """
+    CRITICAL FIX: Mengubah float 105.0 menjadi string '105'.
+    Tanpa ini, mapping sering gagal (105.0 != 105).
+    """
+    if pd.isna(val): 
+        return ""
+    try:
+        # Coba ubah ke float dulu, lalu int untuk hilangkan desimal, lalu string
+        return str(int(float(val)))
+    except:
+        # Jika gagal (misal ada huruf), ambil string aslinya
+        return str(val).strip()
 
 def to_excel(df):
-    """Convert DataFrame to Excel bytes for download."""
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         df.to_excel(writer, index=False)
     return output.getvalue()
 
 def run():
+    # --- 2. HEADER & UPLOAD ---
     st.markdown(
         """
         <h1 style="display: flex; align-items: center; gap: 10px;">
             <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f4ca.svg" 
                  width="40" height="40">
-            Request Item
+            Request Item (SLA Calculator)
         </h1>
         """,
         unsafe_allow_html=True
     )
 
-    st.write("Upload an Excel file. The system will create columns: `Businesscriticality-Severity`, `Target SLA (jam)`, `Target Selesai`, and `SLA`.")
+    st.write("Upload File Data & Mapping SLA.")
 
-    uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx", "xls"], key="reqitem_uploader")
-    if not uploaded_file:
-        st.info("Please upload the Excel file first.")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("📂 1. Data Tiket")
+        file_data = st.file_uploader("Upload Excel Data", type=["xlsx", "xls"], key="data_uploader")
+
+    with col2:
+        st.subheader("📂 2. Mapping SLA")
+        file_mapping = st.file_uploader("Upload Excel Mapping", type=["xlsx", "xls"], key="map_uploader")
+
+    if not file_data or not file_mapping:
+        st.warning("⚠️ Harap upload kedua file untuk memproses.")
         return
 
+    # --- 3. PROSES MAPPING (FILE 2) ---
     try:
-        df = pd.read_excel(uploaded_file)
+        xls_map = pd.ExcelFile(file_mapping)
+        if 'Mapping SLA' not in xls_map.sheet_names:
+            st.error("❌ Sheet 'Mapping SLA' tidak ditemukan dalam file Excel Mapping!")
+            return
+        
+        df_map = pd.read_excel(xls_map, sheet_name='Mapping SLA')
+
+        # --- MAPPING ITEM (Kolom L & M / Index 11 & 12) ---
+        valid_items = df_map.iloc[:, [11, 12]].dropna()
+        problem_map = dict(zip(
+            valid_items.iloc[:, 0].apply(normalize_text), 
+            valid_items.iloc[:, 1].apply(clean_id_str)  # Pakai clean_id_str
+        ))
+
+        # --- MAPPING SEVERITY (Kolom O & P / Index 14 & 15) ---
+        valid_sev = df_map.iloc[:, [14, 15]].dropna()
+        severity_map = dict(zip(
+            valid_sev.iloc[:, 0].apply(normalize_text), 
+            valid_sev.iloc[:, 1].apply(clean_id_str)    # Pakai clean_id_str
+        ))
+
+        # --- MAPPING DURASI (Kolom C & I / Index 2 & 8) ---
+        valid_sla = df_map.iloc[:, [2, 8]].dropna()
+        sla_days_map = dict(zip(
+            valid_sla.iloc[:, 0].apply(clean_id_str),   # Kunci utama mapping (ID Gabungan)
+            valid_sla.iloc[:, 1]                        # Nilai Durasi (Hari)
+        ))
+        
+        st.success(f"✅ Mapping Loaded: {len(problem_map)} Items, {len(sla_days_map)} Rules Durasi.")
+
     except Exception as e:
-        st.error(f"Failed to read Excel file: {e}")
+        st.error(f"Error membaca file Mapping: {e}")
+        st.info("Pastikan format kolom file Mapping tidak berubah posisi.")
         return
-
-    st.success("File has been successfully read.")
-    st.subheader("Data Preview")
-    st.dataframe(df.head(10))
-
-    # === Tambahan: Filter Regional & Tanggal ===
-    possible_name_cols = ['Name', 'Nama', 'User Name']
-    name_col = next((c for c in possible_name_cols if c in df.columns), None)
-
-    if name_col:
-        st.markdown(
-            """
-            <h1 style="display: flex; align-items: center; gap: 10px;">
-                <img src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/1f9ea.svg" 
-                    width="40" height="40">
-                Data Filter
-            </h1>
-            """,
-            unsafe_allow_html=True
-        )
-
-
-        # --- Filter Regional ---
-        regional_option = st.radio(
-            "Choose Regional:",
-            options=["All", "Regional 3"],
-            horizontal=True,
-            key="regional_filter"
-        )
-
-        if regional_option == "Regional 3":
-            df = df[df[name_col].astype(str).str.contains("Regional 3", case=False, na=False)]
-
-        # --- Filter Bulan & Tahun ---
-        possible_date_cols = ['Tiket Dibuat', 'Tiket dibuat', 'Created', 'Created Date', 'CreatedAt']
-        date_created_col = next((c for c in possible_date_cols if c in df.columns), None)
-
-        if date_created_col:
-            df[date_created_col] = pd.to_datetime(df[date_created_col], errors='coerce')
-
-            # ambil semua kombinasi bulan-tahun yang ada
-            df['Bulan-Tahun'] = df[date_created_col].dt.strftime('%Y-%m')
-            available_months = sorted(df['Bulan-Tahun'].dropna().unique())
-
-            selected_month = st.selectbox("Choose Month & Year:", options=["All"] + available_months, key="month_filter")
-
-            if selected_month != "All":
-                df = df[df['Bulan-Tahun'] == selected_month]
-
-        st.markdown(f"**Data after filter:** {len(df)} baris")
-        st.dataframe(df.head(7))
-
-    possible_bc_cols = ['Businesscriticality', 'Business criticality', 'Business Criticality', 'BusinessCriticality']
-    possible_sev_cols = ['Severity', 'severity', 'SEVERITY']
-
-    bc_col = next((c for c in possible_bc_cols if c in df.columns), None)
-    sev_col = next((c for c in possible_sev_cols if c in df.columns), None)
-
-    if bc_col is None or sev_col is None:
-        st.error("Column 'Businesscriticality' or 'Severity' not found.")
-        st.write("Kolom yang ada di file:", list(df.columns))
+    
+    # --- 4. PROSES DATA TIKET (FILE 1) ---
+    try:
+        df = pd.read_excel(file_data)
+    except Exception as e:
+        st.error(f"Error membaca file Data Tiket: {e}")
         return
-
-    # === Mapping SLA dalam JAM ===
-    sla_mapping_hours = {
-        '1 - Critical - 1 - High': 4.0,
-        '1 - Critical - 2 - Medium': 6.0,
-        '1 - Critical - 3 - Low': 8.0,
-        '2 - High - 1 - High': 6.0,
-        '2 - High - 2 - Medium': 8.0,
-        '2 - High - 3 - Low': 12.0,
-        '3 - Medium - 1 - High': 8.0,
-        '3 - Medium - 2 - Medium': 12.0,
-        '3 - Medium - 3 - Low': 16.0,
-        '4 - Low - 1 - High': 16.0,
-        '4 - Low - 2 - Medium': 24.0,
-        '4 - Low - 3 - Low': 48.0
-    }
-
-    st.subheader("✨ SLA Mapping (hours)")
-    mapping_df = pd.DataFrame(list(sla_mapping_hours.items()), columns=["Businesscriticality-Severity", "Target SLA (jam)"])
-    st.markdown(
-        mapping_df.to_html(index=False, classes='table table-sm', justify='left')
-        .replace('<td>', '<td style="text-align:left;">'),
-        unsafe_allow_html=True
-    )
-
-    # === Normalisasi label & mapping ===
-    df['_bc_raw'] = df[bc_col].astype(str).fillna('').str.strip()
-    df['_sev_raw'] = df[sev_col].astype(str).fillna('').str.strip()
-    df['Businesscriticality-Severity'] = (df['_bc_raw'] + " - " + df['_sev_raw']).apply(normalize_label)
-
-    def map_to_hours(label: str):
-        if not label:
-            return None
-        for key in sla_mapping_hours.keys():
-            if normalize_label(label) == normalize_label(key):
-                return sla_mapping_hours[key]
-        return None
-
-    df['Target SLA (jam)'] = df['Businesscriticality-Severity'].apply(map_to_hours)
-
-    # cek kolom tanggal
-    date_created_col = next((c for c in ['Tiket Dibuat', 'Tiket dibuat', 'Created', 'Created Date', 'CreatedAt'] if c in df.columns), None)
-    if date_created_col is None:
-        st.error("Ticket creation date column not found.")
-        return
-
-    date_closed_col = next((c for c in ['Tiket Ditutup', 'Resolved', 'Closed', 'Closed At', 'Tiket ditutup'] if c in df.columns), None)
-
-    df[date_created_col] = pd.to_datetime(df[date_created_col], errors='coerce')
-    if date_closed_col:
-        df[date_closed_col] = pd.to_datetime(df[date_closed_col], errors='coerce')
-
-    df['Target Selesai'] = df.apply(
-        lambda r: (r[date_created_col] + pd.to_timedelta(r['Target SLA (jam)'], unit='h'))
-        if pd.notna(r[date_created_col]) and pd.notna(r['Target SLA (jam)']) else pd.NaT,
-        axis=1
-    )
-
-    if date_closed_col:
-        df['SLA'] = df.apply(
-            lambda r: 1 if (pd.notna(r['Target Selesai']) and pd.notna(r[date_closed_col]) and r[date_closed_col] <= r['Target Selesai'])
-            else (0 if (pd.notna(r['Target Selesai']) and pd.notna(r[date_closed_col])) else pd.NA),
-            axis=1
-        )
+    
+    # --- 5. FILTER REGIONAL ---
+    reg3_raw = "P. Lembar,Regional 3,P. Batulicin,R. Jawa,Terminal Celukan Bawang,Sub Regional BBN,P. Tg. Emas,P. Bumiharjo,Tanjung Perak,R. Bali Nusra,P. Badas,TANJUNGPERAK,TANJUNGEMAS/KEUANGAN,TANJUNGEMAS,P. Tg. Intan, BANJARMASIN/TPK, KOTABARU/MEKARPUTIH,P. Waingapu, R. Kalimantan,Terminal Nilam, Terminal Kumai,P. Kalimas, P. Tg. Wangi,P. Gresik, P. Kotabaru,BANJARMASIN/KOMERSIAL,TANJUNGWANGI/TEKNIK,Sub Regional Kalimantan,GRESIK/TERMINAL,Terminal Kota Baru,P. Sampit,BANJARMASIN/TMP,P. Bagendang,BANJARMASIN/PDS,TENAU/KALABAHI,P. Bima,P. Tenau Kupang,Terminal Lembar,P. Tegal,Terminal Trisakti,BENOA/OPKOM,P. Benoa,BANJARMASIN/TEKNIK,BANJARMASIN/PBJ,TANJUNGINTAN,KOTABARU,TENAU,Sub Regional Jawa Timur,KUMAI/OPKOM,Terminal Batulicin,Terminal Gresik, KUMAI/KEUPER,LEMBAR/KEUPER,P. Kalabahi,BIMA/BADAS,Terminal Jamrud,TENAU/WAINGAPU,Terminal Benoa,P. Tg. Tembaga,BIMA/PDS,BENOA/SUK,P. Clk. Bawang,KUMAI/BUMIHARJO,P. Pulang Pisau,Terminal Labuan Bajo,P. Maumere,BENOA/KEUANGAN,BENOA/PKWT,Terminal Kalimas,BANJARMASIN/KEUANGAN,BENOA/PEMAGANG,GRESIK/KEUANGAN,Terminal Petikemas Banjarmasin,CELUKANBAWANG,P. Ende-Ippi,SAMPIT/BAGENDANG,Terminal Bima,KOTABARU/KEPANDUAN,Terminal Sampit,Terminal Kupang, BENOA/TEKNIK, Terminal Maumere, PROBOLINGGO/PLS, SAMPIT/PKWT, P. Labuan Bajo, P. Kalianget, Banjarmasin, Terminal Waingapu, MAUMERE/ENDE"
+    list_reg3 = [x.strip() for x in reg3_raw.split(',') if x.strip()]
+    
+    loc_col = next((c for c in ['Lokasi Pelapor', 'Lokasi', 'Location'] if c in df.columns), None)
+    
+    if loc_col:
+        st.markdown("### 🔍 Filter")
+        opt = st.radio("Pilih Data:", ["All", "Regional 3 Only"], horizontal=True)
+        if opt == "Regional 3 Only":
+            df = df[df[loc_col].astype(str).str.strip().isin(list_reg3)].copy()
+            df['Data Reg3'] = df[loc_col]
+            st.info(f"Menampilkan {len(df)} data Regional 3.")
+        else:
+            df['Data Reg3'] = df[loc_col]
     else:
-        df['SLA'] = pd.NA
+        df['Data Reg3'] = ""
+    
+    # --- 6. KALKULASI SLA (CORE LOGIC) ---
+    # --- 6. KALKULASI SLA (REVISI LOGIKA MAPPING) ---
+    req_cols = {
+        'Tiket Dibuat': ['Tiket Dibuat', 'Created', 'created'],
+        'Tiket Ditutup': ['Tiket Ditutup', 'Closed', 'closed'],
+        'Judul Permasalahan': ['Judul Permasalahan', 'Item', 'item'],
+        'Severity': ['Severity', 'severity'] # Kita fokus ke Severity saja
+    }
+    
+    col_map = {}
+    for key, candidates in req_cols.items():
+        found = next((c for c in candidates if c in df.columns), None)
+        if not found:
+            st.error(f"❌ Kolom '{key}' tidak ditemukan di Excel Data Tiket!")
+            return
+        col_map[key] = found
 
-    # === Rekapitulasi SLA (donut chart di sini) ===
-    if date_closed_col:
-        sla_tercapai = int((df['SLA'] == 1).sum())
-        sla_tidak_tercapai = int((df['SLA'] == 0).sum())
-        sla_open = int(df[date_closed_col].isna().sum())
-        total_semua = len(df)
+    # A. Mapping ID Angka (Dari Judul Permasalahan) - Sudah Benar
+    # Pakai clean_id_str agar 105.0 menjadi "105"
+    df['ID_Angka'] = df[col_map['Judul Permasalahan']].apply(normalize_text).map(problem_map)
+    
+    # B. Mapping ID Huruf (FIX: DARI SEVERITY LANGSUNG)
+    # Kita ambil kolom Severity, bersihkan, lalu map.
+    def get_clean_severity(val):
+        s = str(val).strip()
+        if s.lower() == 'nan': return ""
+        return s
 
-        st.subheader("✨ SLA Recap")
-        st.write(f"- 🏆 SLA achieved: **{sla_tercapai}**")
-        st.write(f"- 🚨 SLA not achieved: **{sla_tidak_tercapai}**")
-        st.write(f"- ⏳ SLA still open: **{sla_open}**")
-        st.write(f"- 📈 Total tickets: **{total_semua}**")
+    df['Clean_Severity'] = df[col_map['Severity']].apply(get_clean_severity)
+    
+    # Coba mapping langsung dari Severity
+    df['ID_Huruf'] = df['Clean_Severity'].apply(normalize_text).map(severity_map)
+    
+    # NOTE: Jika Mapping masih gagal, sistem akan mencoba mencari dengan format "BusinessCrit - Severity"
+    # Tapi berdasarkan gambar Anda, sepertinya Severity saja sudah cukup.
 
-        rekap_data = pd.DataFrame({
-            'Kategori': ['SLA Achieved', 'SLA Not Achieved', 'Open'],
-            'Jumlah': [sla_tercapai, sla_tidak_tercapai, sla_open]
+    # C. Gabung ID & Map Durasi
+    # Pastikan ID Angka dan Huruf bersih sebelum digabung
+    df['SLA_Code'] = df['ID_Angka'].apply(clean_id_str) + df['ID_Huruf'].apply(clean_id_str)
+    
+    # Replace kode yang kosong/rusak dengan NA
+    df['SLA_Code'] = df['SLA_Code'].replace(['', 'nan', 'NaN', 'None'], pd.NA)
+    
+    # Mapping ke Durasi (Hari)
+    df['Target SLA'] = df['SLA_Code'].map(sla_days_map) 
+
+    # D. Hitung Tanggal Target
+    df[col_map['Tiket Dibuat']] = pd.to_datetime(df[col_map['Tiket Dibuat']])
+    df['Target SLA'] = pd.to_numeric(df['Target SLA'], errors='coerce')
+    df['Target Selesai'] = df[col_map['Tiket Dibuat']] + pd.to_timedelta(df['Target SLA'], unit='D')
+
+    # E. Status SLA Calculator
+    df[col_map['Tiket Ditutup']] = pd.to_datetime(df[col_map['Tiket Ditutup']], errors='coerce')
+    
+    def calc_sla(row):
+        closed = row[col_map['Tiket Ditutup']]
+        target = row['Target Selesai']
+        
+        if pd.isna(closed): return "WP"       # Belum ditutup
+        if pd.isna(target): return "Unknown"  # Gagal Mapping
+        return 1 if closed <= target else 0   # 1=Achieved, 0=Late
+
+    df['SLA'] = df.apply(calc_sla, axis=1)
+
+    # --- 7. VISUALISASI (Gaya Kamu) ---
+    st.markdown("---")
+    st.subheader("✨ SLA Recap")
+
+    sla_tercapai = int((df['SLA'] == 1).sum())
+    sla_tidak_tercapai = int((df['SLA'] == 0).sum())
+    sla_open = int((df['SLA'] == "WP").sum())
+    sla_unknown = int((df['SLA'] == "Unknown").sum())
+    total_semua = len(df)
+    
+    if sla_unknown > 0:
+        st.warning(f"⚠️ PERINGATAN: Ada {sla_unknown} tiket berstatus 'Unknown' (Mapping Gagal).")
+        with st.expander("🔍 Klik untuk Debugging (Lihat Data Gagal)"):
+            # PERBAIKAN DI SINI: Hapus 'Businesscriticality-Severity', ganti 'Clean_Severity'
+            cols_debug = [
+                col_map['Judul Permasalahan'], 
+                'Clean_Severity',  
+                'ID_Angka', 
+                'ID_Huruf', 
+                'SLA_Code'
+            ]
+            # Pastikan kolom ada sebelum ditampilkan
+            cols_debug = [c for c in cols_debug if c in df.columns]
+            
+            debug_df = df[df['SLA'] == 'Unknown'][cols_debug].head(20)
+            st.dataframe(debug_df)
+            st.write("Tips: Jika 'ID_Huruf' NaN, berarti Severity tidak cocok dengan Mapping.")
+
+    # Metric Cards
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Tickets", total_semua)
+    c2.metric("🏆 Achieved", sla_tercapai)
+    c3.metric("🚨 Not Achieved", sla_tidak_tercapai)
+    c4.metric("⏳ Open / WP", sla_open)
+
+    # Bar Chart Recap
+    rekap_data = pd.DataFrame({
+        'Kategori': ['SLA Achieved', 'SLA Not Achieved', 'Open (WP)', 'Unknown'],
+        'Jumlah': [sla_tercapai, sla_tidak_tercapai, sla_open, sla_unknown]
+    })
+
+    fig2 = px.bar(rekap_data, x='Kategori', y='Jumlah', text='Jumlah', title='SLA Status Distribution',
+                  color='Kategori', 
+                  color_discrete_map={'SLA Achieved':'#00CC96', 'SLA Not Achieved':'#EF553B', 'Open (WP)':'#636EFA', 'Unknown':'#AB63FA'})
+    fig2.update_traces(textposition='outside')
+    st.plotly_chart(fig2, use_container_width=True)
+
+    # Donut Chart (Closed Tickets Only)
+    if sla_tercapai + sla_tidak_tercapai > 0:
+        donut_data = pd.DataFrame({
+            "SLA": ["On Time", "Late"],
+            "Jumlah": [sla_tercapai, sla_tidak_tercapai]
         })
-        fig2 = px.bar(rekap_data, x='Kategori', y='Jumlah', text='Jumlah', title='SLA Recap')
-        fig2.update_traces(textposition='outside')
-        st.plotly_chart(fig2)
 
-        if sla_tercapai + sla_tidak_tercapai > 0:
-            donut_data = pd.DataFrame({
-                "SLA": ["On Time", "Late"],
-                "Jumlah": [sla_tercapai, sla_tidak_tercapai]
-            })
-            fig_donut = px.pie(donut_data, names="SLA", values="Jumlah", hole=0.4, title="On Time Percentage")
-            st.plotly_chart(fig_donut)
+        fig_donut = px.pie(donut_data, names="SLA", values="Jumlah", hole=0.4, title="On Time Percentage (Closed Tickets Only)",
+                           color_discrete_sequence=['#00CC96', '#EF553B'])
+        st.plotly_chart(fig_donut, use_container_width=True)
 
     # === Analisis tambahan ===
     st.subheader("✨ Additional Analysis")
 
-    # top 5 kombinasi
-    top5 = df['Businesscriticality-Severity'].value_counts().reset_index()
-    top5.columns = ['Businesscriticality-Severity', 'Jumlah']
-    top5.index = top5.index + 1  # mulai dari 1
-    top5 = top5.head(5)
-    st.markdown("**Top 5 most frequent Businesscriticality-Severity combinations:**")
-    st.markdown(top5.to_html(index=True, justify='left').replace('<td>', '<td style="text-align:left;">'), unsafe_allow_html=True)
-
+    # Top 5 Kombinasi Severity
+    if 'Clean_Severity' in df.columns:
+        top5 = df['Clean_Severity'].value_counts().reset_index()
+        top5.columns = ['Severity Level', 'Jumlah'] # Ubah nama kolom agar rapi
+        top5.index = top5.index + 1
+        top5 = top5.head(5)
+        
+        st.markdown("**Top Severity Frequency:**")
+        st.markdown(top5.to_html(index=True, justify='left').replace('<td>', '<td style="text-align:left;">'), unsafe_allow_html=True)
     # === Contact Type & Item ===
-    possible_contacttype_cols = ['Contact Type', 'ContactType', 'Contact type']
-    contact_col = next((c for c in possible_contacttype_cols if c in df.columns), None)
+    contact_col = next((c for c in ['Contact Type', 'ContactType', 'Contact type'] if c in df.columns), None)
 
     if contact_col:
         contact_summary = df[contact_col].value_counts(dropna=False).reset_index()
@@ -230,14 +271,11 @@ def run():
         st.markdown(top3_contact.to_html(index=True, justify='left').replace('<td>', '<td style="text-align:left;">'), unsafe_allow_html=True)
 
         fig_contact = px.pie(top3_contact, names='Tipe Kontak', values='Jumlah', hole=0.4, title='Top 3 Contact Type')
-        st.plotly_chart(fig_contact)
-        st.markdown("<p style='font-style: italic; color: gray;'>Showing top 3 contact types.</p>", unsafe_allow_html=True)
-
-        possible_item_cols = ['Item', 'item', 'ITEM']
-        item_col = next((c for c in possible_item_cols if c in df.columns), None)
-
-        if item_col:
-            top5_item = df[item_col].value_counts(dropna=False).reset_index()
+        st.plotly_chart(fig_contact, use_container_width=True)
+        
+        # Top 5 Items
+        if col_map['Judul Permasalahan']:
+            top5_item = df[col_map['Judul Permasalahan']].value_counts(dropna=False).reset_index()
             top5_item.columns = ['Item', 'Jumlah']
             top5_item.index = top5_item.index + 1
             top5_item = top5_item.head(5)
@@ -246,77 +284,64 @@ def run():
             st.markdown(top5_item.to_html(index=True, justify='left').replace('<td>', '<td style="text-align:left;">'), unsafe_allow_html=True)
 
             fig_item = px.bar(
-                top5_item,
-                x='Item',
-                y='Jumlah',
-                text='Jumlah',
+                top5_item, x='Item', y='Jumlah', text='Jumlah',
                 title='Top 5 Most Requested Items',
             )
             fig_item.update_traces(textposition='outside')
-            fig_item.update_layout(yaxis_range=[0, top5_item['Jumlah'].max() * 1.2])
-            st.plotly_chart(fig_item)
+            st.plotly_chart(fig_item, use_container_width=True)
 
         # === Analisis Service Offering ===
-        possible_service_cols = ['Service Offering', 'ServiceOffering', 'Service offering']
-        service_col = next((c for c in possible_service_cols if c in df.columns), None)
-
+        service_col = next((c for c in ['Service Offering', 'ServiceOffering'] if c in df.columns), None)
         if service_col:
             st.subheader("✨ Service Offering Analysis")
             service_summary = (
-                df[service_col]
-                .dropna()
-                .astype(str)
-                .replace(['', 'None', 'nan', 'NaN'], pd.NA)
-                .dropna()
-                .value_counts()
-                .reset_index()
+                df[service_col].dropna().astype(str)
+                .replace(['', 'None', 'nan', 'NaN'], pd.NA).dropna()
+                .value_counts().reset_index()
             )
             service_summary.columns = ['Service Offering', 'Jumlah']
             service_summary.index = service_summary.index + 1
             top3_service = service_summary.head(3)
 
-            st.markdown("**Top 3 Service Offerings with the most tickets:**")
+            st.markdown("**Top 3 Service Offerings:**")
             st.markdown(top3_service.to_html(index=True, justify='left').replace('<td>', '<td style="text-align:left;">'), unsafe_allow_html=True)
 
-
-            # Visualisasi
-            fig_service = px.bar(
-                top3_service,
-                x='Service Offering',
-                y='Jumlah',
-                text='Jumlah',
-                title='Top 3 Service Offering',
-            )
+            fig_service = px.bar(top3_service, x='Service Offering', y='Jumlah', text='Jumlah', title='Top 3 Service Offering')
             fig_service.update_traces(textposition='outside')
-            fig_service.update_layout(
-                yaxis_range=[0, top3_service['Jumlah'].max() * 1.2],
-                xaxis_tickangle=-45
-            )
-            st.plotly_chart(fig_service)
+            fig_service.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig_service, use_container_width=True)
 
-            # Catatan di bawah grafik
-            st.markdown("<p style='font-style: italic; color: gray;'", unsafe_allow_html=True)
-
-
-    # tampilkan hasil akhir
-    def sla_status(row):
-        if pd.isna(row.get(date_closed_col)):
-            return "Open"
-        elif row.get("SLA") == 1:
-            return "Achieved"
-        elif row.get("SLA") == 0:
-            return "Not Achieved"
-        else:
-            return "Unknown"
-
-    df["Status SLA"] = df.apply(sla_status, axis=1)
-
+    # --- 8. OUTPUT DATA ---
     st.subheader("🔥 Calculation Result")
-    tiket_col = next((c for c in ['No. Tiket', 'Ticket No', 'No Ticket', 'No Tiket', 'Ticket'] if c in df.columns), None)
-    show_cols = [col for col in [tiket_col, 'Businesscriticality-Severity', 'Target SLA (jam)', 'Target Selesai', 'SLA'] if col]
+    
+    def get_status_label(val):
+        if val == 1: return "Achieved"
+        if val == 0: return "Not Achieved"
+        if val == "WP": return "Open/WP"
+        return "Unknown"
+
+    df["Status SLA"] = df['SLA'].apply(get_status_label)
+
+    # Menentukan kolom yang ditampilkan
+    tiket_col = next((c for c in ['No. Tiket', 'Ticket No', 'No Ticket'] if c in df.columns), None)
+    
+    target_cols = [
+        tiket_col, 
+        col_map['Judul Permasalahan'],
+        'Clean_Severity',
+        'Target SLA',       # Ini nilai hari (misal 0.02)
+        'Target Selesai',   # Ini tanggal
+        'SLA',              # Ini 1/0
+        'Status SLA',       # Ini Label Text
+        'Data Reg3'
+    ]
+    
+    show_cols = [c for c in target_cols if c and c in df.columns]
+    
+    # Tampilkan Data Table
     st.dataframe(df[show_cols].head(50))
 
-    # Ganti ke XLSX download
+    # Download Button
     excel_bytes = to_excel(df)
     st.download_button(
         "Download Result XLSX",
@@ -324,3 +349,6 @@ def run():
         file_name="reqitem_hasil.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+if __name__ == "__main__":
+    run()
