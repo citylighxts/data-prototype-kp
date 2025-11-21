@@ -17,7 +17,7 @@ st.markdown(
 # Pilihan halaman di tengah
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    menu = st.selectbox("Choose one page below:", ["Home", "Reqitem", "Incident", "Summary", "cobareq"])
+    menu = st.selectbox("Choose one page below:", ["Home", "Reqitem", "Incident", "Summary"])
 
 # Tampilkan konten tengah berdasarkan pilihan menu
 if menu == "Home":
@@ -43,8 +43,4 @@ elif menu == "Incident":
 
 elif menu == "Summary":
     summary = importlib.import_module("summary")
-    summary.run()
-
-elif menu == "cobareq":
-    summary = importlib.import_module("cobareq")
     summary.run()
