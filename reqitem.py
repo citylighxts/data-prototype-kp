@@ -38,7 +38,7 @@ def run():
     ]
 
     st.sidebar.header("📂 Upload File")
-    uploaded_req = st.sidebar.file_uploader("1. File Request Item (.xlsx)", type=["xlsx"])
+    uploaded_req = st.sidebar.file_uploader("File Request Item (.xlsx)", type=["xlsx"])
     
     # --- LOGIKA OTOMATIS BACA FILE MAPPING ---
     default_sla_path = os.path.join(os.path.dirname(__file__), "data_sc_req_mapping.xlsx")
@@ -47,7 +47,7 @@ def run():
         uploaded_sla = default_sla_path
     else:
         st.sidebar.warning("⚠️ File mapping default tidak ditemukan.")
-        uploaded_sla = st.sidebar.file_uploader("2. Upload File Mapping SLA (.xlsx)", type=["xlsx"])
+        uploaded_sla = st.sidebar.file_uploader("Upload File Mapping SLA (.xlsx)", type=["xlsx"])
 
     # --- FUNGSI BANTUAN ---
     def parse_sla_duration(val):
@@ -210,7 +210,7 @@ def run():
 
                     with tab1:
                         # --- 1. SLA RECAP (ANGKA & PERCENTAGE) ---
-                        st.subheader("1. SLA Performance Recap")
+                        st.subheader("SLA Performance Recap")
                         
                         # Hitung Count
                         sla_counts = df_final['SLA'].value_counts()
@@ -257,7 +257,7 @@ def run():
 
                         with col_left:
                             # TOP 5 BUSINESS CRITICALITY - SEVERITY
-                            st.subheader("2. Top 5 Business Criticality - Severity")
+                            st.subheader("Top 5 Business Criticality - Severity")
                             if 'Businesscriticality-Severity' in df_final.columns:
                                 top_bc = df_final['Businesscriticality-Severity'].value_counts().head(5).reset_index()
                                 top_bc.columns = ['Category', 'Count']
@@ -266,7 +266,7 @@ def run():
                                 st.plotly_chart(fig_bc, use_container_width=True)
                             
                             # TOP 5 REQUESTED ITEMS
-                            st.subheader("3. Top 5 Most Requested Items")
+                            st.subheader("Top 5 Most Requested Items")
                             if col_item in df_final.columns:
                                 top_items = df_final[col_item].value_counts().head(5).reset_index()
                                 top_items.columns = ['Item', 'Count']
@@ -287,20 +287,15 @@ def run():
 
                             # --- DISINI DULUNYA ADA SERVICE OFFERING (SUDAH DIHAPUS) ---
                         st.markdown("---")
-                        st.subheader("Daftar Tiket Terlambat (Late)")
+                        st.subheader("⚠️ Daftar Tiket Terlambat (Late)")
 
-                        # Filter hanya yang late (SLA == 0)
-                        df_late = df_final[df_final['SLA'] == 0]
+                        # Filter DataFrame Display (yang kolomnya lengkap) untuk SLA == 0
+                        df_late_full = df_display[df_display['SLA'] == 0]
 
-                        if not df_late.empty:
-                            st.warning(f"Terdapat {len(df_late)} tiket yang melewati target SLA.")
-                            
-                            # Pilih kolom penting untuk ditampilkan di tabel ringkasan ini
-                            important_cols = ['No. Tiket', col_judul, col_dibuat, 'Target Selesai', col_ditutup]
-                            # Pastikan kolom ada
-                            show_cols = [c for c in important_cols if c in df_late.columns]
-                            
-                            st.dataframe(df_late[show_cols], use_container_width=True)
+                        if not df_late_full.empty:
+                            st.warning(f"Terdapat {len(df_late_full)} tiket yang melewati target SLA.")
+                            # Menampilkan seluruh kolom, dengan mode narrow/kompak (use_container_width=False)
+                            st.dataframe(df_late_full, use_container_width=False)
                         else:
                             st.success(" Tidak ada tiket yang terlambat.")
 
