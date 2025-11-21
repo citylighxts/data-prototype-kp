@@ -6,7 +6,7 @@ from datetime import datetime, time, timedelta
 
 st.set_page_config(page_title="SLA Analytics Dashboard", layout="wide")
 
-def main():
+def run():
     st.title("📊 SLA Analytics & Handling Dashboard")
     st.markdown("""
     **Fitur:** Auto-Fill Data Kosong, Pembersihan Spasi, dan **Visualisasi Dashboard**.
@@ -292,4 +292,4 @@ def main():
             st.error(f"Gagal Baca File: {e}")
 
 if __name__ == "__main__":
-    main()
+    run()
