@@ -474,7 +474,7 @@ def run():
             
     st.divider()
 
-    # --- 8. Channel Data ---
+    # --- 8. Channel Data Preparation ---
     contact_col_incident_names = ['Channel', 'Contact Type', 'ContactType', 'Contact type']
     contact_col_request_names = ['Contact Type', 'ContactType', 'Contact type', 'Channel']
 
@@ -502,23 +502,66 @@ def run():
     else:
         st.warning("Tidak ada data channel untuk dianalisis.")
 
-    # --- 10. Channel Donut Chart ---
-    st.subheader("📊 Distribusi Channel (Semua Tiket)")
-    if not df_combined_channel.empty:
-        channel_summary = df_combined_channel['Channel'].value_counts().reset_index()
-        channel_summary.columns = ['Channel', 'Count']
-        
-        fig_channel = px.pie(
-            channel_summary,
-            names='Channel',
-            values='Count',
-            title='Distribusi Tiket Gabungan berdasarkan Channel',
-            hole=0.4
-        )
-        fig_channel.update_traces(textinfo='percent+label')
-        st.plotly_chart(fig_channel, use_container_width=True)
-    else:
-        st.warning("Tidak ada data channel untuk ditampilkan.")
+    # --- 10. Channel Distribution (DIPERBAIKI: 3 TABS) ---
+    st.subheader("📊 Distribusi Channel")
+    
+    # Membuat 3 Tabs sesuai permintaan
+    tab_all, tab_inc, tab_req = st.tabs(["Semua Tiket (Combined)", "Incident Only", "Request Only"])
+
+    # --- TAB 1: SEMUA TIKET ---
+    with tab_all:
+        if not df_combined_channel.empty:
+            channel_summary = df_combined_channel['Channel'].value_counts().reset_index()
+            channel_summary.columns = ['Channel', 'Count']
+            
+            fig_channel_all = px.pie(
+                channel_summary,
+                names='Channel',
+                values='Count',
+                title='Distribusi Semua Tiket berdasarkan Channel',
+                hole=0.4
+            )
+            fig_channel_all.update_traces(textinfo='percent+label')
+            st.plotly_chart(fig_channel_all, use_container_width=True)
+        else:
+            st.warning("Tidak ada data channel untuk ditampilkan.")
+
+    # --- TAB 2: INCIDENT ONLY ---
+    with tab_inc:
+        if col_inc and not df_inc_all.empty:
+            inc_channel_summary = df_inc_all[col_inc].fillna('Unknown').value_counts().reset_index()
+            inc_channel_summary.columns = ['Channel', 'Count']
+            
+            fig_channel_inc = px.pie(
+                inc_channel_summary,
+                names='Channel',
+                values='Count',
+                title='Distribusi Tiket Incident berdasarkan Channel',
+                hole=0.4
+            )
+            fig_channel_inc.update_traces(textinfo='percent+label')
+            st.plotly_chart(fig_channel_inc, use_container_width=True)
+        else:
+            st.info("Tidak ada data channel untuk Incident.")
+
+    # --- TAB 3: REQUEST ONLY ---
+    with tab_req:
+        if col_req and not df_req_all.empty:
+            req_channel_summary = df_req_all[col_req].fillna('Unknown').value_counts().reset_index()
+            req_channel_summary.columns = ['Channel', 'Count']
+            
+            fig_channel_req = px.pie(
+                req_channel_summary,
+                names='Channel',
+                values='Count',
+                title='Distribusi Tiket Request berdasarkan Channel',
+                hole=0.4
+            )
+            fig_channel_req.update_traces(textinfo='percent+label')
+            st.plotly_chart(fig_channel_req, use_container_width=True)
+        else:
+            st.info("Tidak ada data channel untuk Request.")
+
         
     # --- 11. SLA Performance Line Graph ---
     st.subheader("📉 Performa SLA dari Waktu ke Waktu")
