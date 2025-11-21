@@ -441,18 +441,33 @@ def run():
         html_bottom += "</tbody></table>"
         st.markdown(html_bottom, unsafe_allow_html=True)
 
-        # Bar chart masih menggunakan SLA_Pencapaian_%
+        # ========================================================
+        # PERUBAHAN: Menggunakan Plotly Express untuk Label Statis (Persen Pencapaian)
+        # LOGIKA SORT: Diurutkan A-Z berdasarkan Service Offering
+        # ========================================================
         st.subheader("📊 SLA Persen per Service Offering (Persen Pencapaian)")
         
         if 'sla_service_agg' in locals() and service_col in sla_service_agg.columns and 'SLA_Pencapaian_%' in sla_service_agg.columns:
-            chart_data = sla_service_agg.sort_values(by='SLA_Pencapaian_%', ascending=False)
+            # UBAH DI SINI: Sort by service_col (nama), ascending=True (A-Z)
+            chart_data = sla_service_agg.sort_values(by=service_col, ascending=True)
             
-            st.bar_chart(
-                chart_data, 
-                x=service_col,         
-                y='SLA_Pencapaian_%',  
-                height=400
+            # Membuat Chart Plotly
+            fig_sla_percent = px.bar(
+                chart_data,
+                x=service_col,
+                y='SLA_Pencapaian_%',
+                text='SLA_Pencapaian_%', # Menampilkan nilai ini sebagai text
+                title="SLA Persen per Service Offering (Urut Abjad)"
             )
+            
+            # Konfigurasi agar text muncul di luar bar dan format ada %
+            fig_sla_percent.update_traces(texttemplate='%{text}%', textposition='outside')
+            
+            # Set Y-axis agar ada ruang untuk text di atas bar
+            y_max = chart_data['SLA_Pencapaian_%'].max()
+            fig_sla_percent.update_layout(yaxis_range=[0, max(100, y_max * 1.15)])
+            
+            st.plotly_chart(fig_sla_percent, use_container_width=True)
         else:
             st.warning("Tidak dapat membuat chart 'SLA Persen per Service Offering'. Data 'sla_service_agg' tidak ditemukan.")
         
@@ -561,9 +576,7 @@ def run():
                         html_bottom_max += f"<td rowspan='{rowspan}'>{no}</td>"
                     html_bottom_max += f"<td>{row[service_col]}</td>"
                     
-                    # --- PERUBAHAN: Gunakan format_hari_jam_menit ---
                     html_bottom_max += f"<td>{format_hari_jam_menit(row['Time Breach (jam)'])}</td>"
-                    # ----------------------------------------------
                     
                     html_bottom_max += f"<td>{row[tiket_col]}</td>"
                     html_bottom_max += f"<td>{row['SLA Service (%)']}%</td>"
@@ -571,19 +584,35 @@ def run():
             html_bottom_max += "</tbody></table>"
             st.markdown(html_bottom_max, unsafe_allow_html=True)
 
+            # ========================================================
+            # PERUBAHAN: Menggunakan Plotly Express untuk Label Statis (Max Breach)
+            # LOGIKA SORT: Diurutkan A-Z berdasarkan Service Offering
+            # ========================================================
             st.subheader("📊 SLA Tiket Max Breach per Service Offering (Persen Pencapaian)")
             st.caption("Menampilkan SLA per service, dihitung berdasarkan pencapaian (1 tiket max breach).")
 
             if 'max_breach_df' in locals() and service_col in max_breach_df.columns and 'SLA Service (%)' in max_breach_df.columns:
                 
-                chart_data_max_breach = max_breach_df.sort_values(by='SLA Service (%)', ascending=False)
+                # UBAH DI SINI: Sort by service_col (nama), ascending=True (A-Z)
+                chart_data_max_breach = max_breach_df.sort_values(by=service_col, ascending=True)
                 
-                st.bar_chart(
+                # Membuat Chart Plotly
+                fig_max_breach = px.bar(
                     chart_data_max_breach, 
                     x=service_col,           
-                    y='SLA Service (%)',     
-                    height=400
+                    y='SLA Service (%)',
+                    text='SLA Service (%)', # Menampilkan nilai ini sebagai text
+                    title="SLA Tiket Max Breach per Service Offering (Urut Abjad)"
                 )
+                
+                # Konfigurasi text label
+                fig_max_breach.update_traces(texttemplate='%{text}%', textposition='outside')
+                
+                # Adjust Y-axis
+                y_max_2 = chart_data_max_breach['SLA Service (%)'].max()
+                fig_max_breach.update_layout(yaxis_range=[0, max(100, y_max_2 * 1.15)])
+                
+                st.plotly_chart(fig_max_breach, use_container_width=True)
             else:
                 st.warning("Tidak dapat membuat chart 'SLA Tiket Max Breach per Service Offering'. Data 'max_breach_df' tidak ditemukan.")
 

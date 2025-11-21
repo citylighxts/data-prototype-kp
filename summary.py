@@ -562,7 +562,6 @@ def run():
         else:
             st.info("Tidak ada data channel untuk Request.")
 
-        
     # --- 11. SLA Performance Line Graph ---
     st.subheader("📉 Performa SLA dari Waktu ke Waktu")
 
@@ -570,15 +569,41 @@ def run():
     req_sla_monthly = df_req_all.groupby('Month').apply(get_sla_summary)
 
     data_points = []
+    
+    # Loop Incident
     for month, stats in inc_sla_monthly.items():
         if stats['total_closed'] > 0:
-            data_points.append({'Month': month, 'Type': 'Incident', 'SLA (%)': stats['percent']})
+            # TIDAK DIBULATKAN: Menggunakan stats['percent'] asli
+            data_points.append({
+                'Month': month, 
+                'Type': 'Incident', 
+                'SLA (%)': stats['percent'], 
+                'Achieved': stats['achieved'],         
+                'Total Closed': stats['total_closed']  
+            })
+            
+    # Loop Request
     for month, stats in req_sla_monthly.items():
         if stats['total_closed'] > 0:
-            data_points.append({'Month': month, 'Type': 'Request', 'SLA (%)': stats['percent']})
+            # TIDAK DIBULATKAN: Menggunakan stats['percent'] asli
+            data_points.append({
+                'Month': month, 
+                'Type': 'Request', 
+                'SLA (%)': stats['percent'],
+                'Achieved': stats['achieved'],         
+                'Total Closed': stats['total_closed']  
+            })
 
     if data_points:
         chart_df = pd.DataFrame(data_points).sort_values(by='Month')
+        
+        # Membuat Label Custom: "92.5% <br> (45/50)"
+        # map('{:.1f}'.format) digunakan agar desimal tidak terlalu panjang (cukup 1 angka belakang koma)
+        chart_df['Label'] = (
+            chart_df['SLA (%)'].map('{:.1f}'.format) + "% (" + 
+            chart_df['Achieved'].astype(str) + "/" + 
+            chart_df['Total Closed'].astype(str) + ")"
+        )
         
         chart_df['Month_Display'] = chart_df['Month'].str.split('(').str[1].str.replace(')', '') + " " + chart_df['Month'].str.split('-').str[0]
         chart_df = chart_df.sort_values(by='Month')
@@ -590,15 +615,17 @@ def run():
             y='SLA (%)',
             color='Type',        
             markers=True,        
-            text='SLA (%)',      
+            text='Label',  # Gunakan kolom Label custom
+            hover_data=['Achieved', 'Total Closed'], 
             title='Pencapaian SLA (%) vs. Bulan'
         )
         
-        fig_line.update_traces(texttemplate='%{y:.1f}%', textposition='top center')
+        fig_line.update_traces(textposition='top center')
+        
         fig_line.update_layout(
             yaxis_title="SLA Achievement (%)",
             xaxis_title="Bulan",
-            yaxis_range=[0, 105],
+            yaxis_range=[0, 115], # Ruang ekstra untuk label 2 baris
             xaxis={'categoryorder':'array', 'categoryarray': month_display_order} 
         )
         st.plotly_chart(fig_line, use_container_width=True)
