@@ -286,6 +286,23 @@ def run():
                                 st.plotly_chart(fig_contact, use_container_width=True)
 
                             # --- DISINI DULUNYA ADA SERVICE OFFERING (SUDAH DIHAPUS) ---
+                        st.markdown("---")
+                        st.subheader("Daftar Tiket Terlambat (Late)")
+
+                        # Filter hanya yang late (SLA == 0)
+                        df_late = df_final[df_final['SLA'] == 0]
+
+                        if not df_late.empty:
+                            st.warning(f"Terdapat {len(df_late)} tiket yang melewati target SLA.")
+                            
+                            # Pilih kolom penting untuk ditampilkan di tabel ringkasan ini
+                            important_cols = ['No. Tiket', col_judul, col_dibuat, 'Target Selesai', col_ditutup]
+                            # Pastikan kolom ada
+                            show_cols = [c for c in important_cols if c in df_late.columns]
+                            
+                            st.dataframe(df_late[show_cols], use_container_width=True)
+                        else:
+                            st.success(" Tidak ada tiket yang terlambat.")
 
                     with tab2:
                         # --- DATA PREVIEW TABLE (SEMPIT/KOMPAK) ---
