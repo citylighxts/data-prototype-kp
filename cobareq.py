@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px  # Library baru untuk visualisasi
 from datetime import datetime, time, timedelta
+import os
 
 st.set_page_config(page_title="SLA Analytics Dashboard", layout="wide")
 
@@ -37,7 +38,19 @@ def run():
 
     st.sidebar.header("📂 Upload File")
     uploaded_req = st.sidebar.file_uploader("1. File Request Item (.xlsx)", type=["xlsx"])
-    uploaded_sla = st.sidebar.file_uploader("2. File Mapping SLA (.xlsx)", type=["xlsx"])
+    
+    # --- LOGIKA OTOMATIS BACA FILE MAPPING ---
+    # Tentukan path file secara dinamis berdasarkan lokasi script ini berjalan
+    default_sla_path = os.path.join(os.path.dirname(__file__), "data_sc_req_mapping.xlsx")
+
+    # Cek apakah file ada di folder repo
+    if os.path.exists(default_sla_path):
+        uploaded_sla = default_sla_path
+        # st.sidebar.info(f"✅ Menggunakan File Mapping Default: data_sc_req_mapping.xlsx")
+    else:
+        # Jika lupa upload ke repo, munculkan opsi upload manual sebagai cadangan
+        st.sidebar.warning("⚠️ File mapping default tidak ditemukan di folder.")
+        uploaded_sla = st.sidebar.file_uploader("2. Upload File Mapping SLA (.xlsx)", type=["xlsx"])
 
     # --- FUNGSI BANTUAN ---
     def parse_sla_duration(val):
