@@ -7,10 +7,6 @@ from datetime import time, timedelta, datetime
 import numpy as np
 import calendar
 
-# =========================================================
-# DEFINISI FUNGSI GLOBAL
-# =========================================================
-
 def find_column(df_cols, possible_names):
     """Mencari nama kolom yang cocok pertama dalam list."""
     for col in possible_names:
@@ -87,7 +83,6 @@ def process_sla_dataframe(df, type_name: str, sla_mapping_hours: dict):
         df_calc[date_created_col] = pd.to_datetime(df_calc[date_created_col], errors='coerce')
         df_calc[date_resolved_col] = pd.to_datetime(df_calc[date_resolved_col], errors='coerce')
 
-        # Tambahkan kolom 'Month'
         df_calc = df_calc.dropna(subset=[date_created_col]) 
         df_calc['Month'] = df_calc[date_created_col].dt.strftime('%Y-%m (%B)')
 
@@ -118,7 +113,7 @@ def process_sla_dataframe(df, type_name: str, sla_mapping_hours: dict):
                 resolution_duration = row[date_resolved_col] - row[date_created_col]
                 sla_timedelta = pd.to_timedelta(row['Target SLA (jam)'], unit='h')
                 breach = resolution_duration - sla_timedelta
-                return breach.total_seconds() / 3600 # dalam jam
+                return breach.total_seconds() / 3600 
             return pd.NA
 
         df_calc['Time Breach'] = df_calc.apply(calculate_time_breach, axis=1)
@@ -176,13 +171,10 @@ def display_occurrence_table(df_slice, data_col, group_by_col, static_type=None,
         agg = df_agg.groupby(group_cols).size().reset_index(name='Number of Case')
         agg = agg.sort_values(by=['Type', 'Number of Case'], ascending=[True, False])
         
-        # --- LOGIC LIMIT DISINI ---
         if limit:
-            # Ambil Top N per grup Type
             final_df = agg.groupby('Type').head(limit).reset_index(drop=True)
             header_text = f"Top {limit} Occurrence"
         else:
-            # Ambil Semua
             final_df = agg.reset_index(drop=True)
             header_text = "Occurrence (All)"
 
@@ -214,8 +206,6 @@ def display_occurrence_table(df_slice, data_col, group_by_col, static_type=None,
     return html_table
 
 
-# --- Fungsi Utama Streamlit ---
-
 def run():
     st.markdown(
         """
@@ -229,7 +219,6 @@ def run():
     )
     st.write("Upload file Incident & Request. Sistem akan otomatis mendeteksi bulan dari data.")
 
-    # === CSS Tabel ===
     css_tabel = """
     <style>
         .manual-sla-table {
@@ -252,7 +241,6 @@ def run():
     </style>
     """
     
-    # === Mapping SLA ===
     sla_mapping_hours = {
         '1 - Critical - 1 - High': 4.0,
         '1 - Critical - 2 - Medium': 6.0,
@@ -268,7 +256,6 @@ def run():
         '4 - Low - 3 - Low': 48.0
     }
 
-    # --- 1. File Uploaders ---
     st.subheader("1. Pengaturan File")
     num_months = st.selectbox(
         "Pilih jumlah periode/bulan yang akan dianalisis:",
@@ -298,7 +285,6 @@ def run():
             )
             uploaded_request_files.append(file_req)
 
-    # --- 2. Check and Load Files ---
     if not all(uploaded_incident_files) or not all(uploaded_request_files):
         st.info("Harap lengkapi semua file uploader di atas untuk melanjutkan.")
         return
@@ -312,7 +298,6 @@ def run():
 
     st.success(f"Berhasil memuat {len(list_df_inc_raw)} file Incident dan {len(list_df_req_raw)} file Request.")
 
-    # --- 3. Proses SLA ---
     list_df_inc_processed = []
     list_df_req_processed = []
 
@@ -324,7 +309,6 @@ def run():
         df_processed = process_sla_dataframe(df_raw, f"Request (File {i+1})", sla_mapping_hours)
         list_df_req_processed.append(df_processed)
 
-    # --- 4. Data Filter (Lokasi) ---
     st.markdown(
         """
         <h1 style="display: flex; align-items: center; gap: 10px;">
@@ -381,12 +365,10 @@ def run():
     st.markdown(f"**Total data setelah filter:** {total_rows_after_filter} baris")
     del df_combined_raw
 
-    # --- 5. Gabungkan Data ---
     df_inc_all = pd.concat(list_df_inc_filtered, ignore_index=True)
     df_req_all = pd.concat(list_df_req_filtered, ignore_index=True)
     df_combined_full = pd.concat([df_inc_all, df_req_all], ignore_index=True)
 
-    # --- 6. Total Ticket Metrics ---
     st.subheader("📈 Volume Tiket (Setelah Filter)")
 
     possible_resolved_cols = ['Resolved', 'Tiket Ditutup', 'Closed', 'Closed At', 'Tiket ditutup']
@@ -413,7 +395,6 @@ def run():
 
     st.divider()
 
-    # --- 7. Rincian per Bulan ---
     st.markdown("<h4>Rincian per Bulan</h4>", unsafe_allow_html=True)
     
     agg_inc_monthly = df_inc_all.groupby('Month').agg(
@@ -474,7 +455,6 @@ def run():
             
     st.divider()
 
-    # --- 8. Channel Data Preparation ---
     contact_col_incident_names = ['Channel', 'Contact Type', 'ContactType', 'Contact type']
     contact_col_request_names = ['Contact Type', 'ContactType', 'Contact type', 'Channel']
 
@@ -490,7 +470,6 @@ def run():
         df_combined_channel = pd.concat([df_inc_slim, df_req_slim], ignore_index=True)
         df_combined_channel['Channel'] = df_combined_channel['Channel'].fillna('Unknown').astype(str).str.strip()
 
-    # --- 9. ESS Analysis ---
     st.subheader("💻 Analisis Self-Service (ESS)")
     if not df_combined_channel.empty:
         ess_keywords = ['ess', 'self-service', 'self service']
@@ -502,13 +481,10 @@ def run():
     else:
         st.warning("Tidak ada data channel untuk dianalisis.")
 
-    # --- 10. Channel Distribution (DIPERBAIKI: 3 TABS) ---
     st.subheader("📊 Distribusi Channel")
     
-    # Membuat 3 Tabs sesuai permintaan
     tab_all, tab_inc, tab_req = st.tabs(["Semua Tiket (Combined)", "Incident Only", "Request Only"])
 
-    # --- TAB 1: SEMUA TIKET ---
     with tab_all:
         if not df_combined_channel.empty:
             channel_summary = df_combined_channel['Channel'].value_counts().reset_index()
@@ -526,7 +502,6 @@ def run():
         else:
             st.warning("Tidak ada data channel untuk ditampilkan.")
 
-    # --- TAB 2: INCIDENT ONLY ---
     with tab_inc:
         if col_inc and not df_inc_all.empty:
             inc_channel_summary = df_inc_all[col_inc].fillna('Unknown').value_counts().reset_index()
@@ -544,7 +519,6 @@ def run():
         else:
             st.info("Tidak ada data channel untuk Incident.")
 
-    # --- TAB 3: REQUEST ONLY ---
     with tab_req:
         if col_req and not df_req_all.empty:
             req_channel_summary = df_req_all[col_req].fillna('Unknown').value_counts().reset_index()
@@ -562,7 +536,6 @@ def run():
         else:
             st.info("Tidak ada data channel untuk Request.")
 
-    # --- 11. SLA Performance Line Graph ---
     st.subheader("📉 Performa SLA dari Waktu ke Waktu")
 
     inc_sla_monthly = df_inc_all.groupby('Month').apply(get_sla_summary)
@@ -570,10 +543,8 @@ def run():
 
     data_points = []
     
-    # Loop Incident
     for month, stats in inc_sla_monthly.items():
         if stats['total_closed'] > 0:
-            # TIDAK DIBULATKAN: Menggunakan stats['percent'] asli
             data_points.append({
                 'Month': month, 
                 'Type': 'Incident', 
@@ -582,10 +553,8 @@ def run():
                 'Total Closed': stats['total_closed']  
             })
             
-    # Loop Request
     for month, stats in req_sla_monthly.items():
         if stats['total_closed'] > 0:
-            # TIDAK DIBULATKAN: Menggunakan stats['percent'] asli
             data_points.append({
                 'Month': month, 
                 'Type': 'Request', 
@@ -597,8 +566,6 @@ def run():
     if data_points:
         chart_df = pd.DataFrame(data_points).sort_values(by='Month')
         
-        # Membuat Label Custom: "92.5% <br> (45/50)"
-        # map('{:.1f}'.format) digunakan agar desimal tidak terlalu panjang (cukup 1 angka belakang koma)
         chart_df['Label'] = (
             chart_df['SLA (%)'].map('{:.1f}'.format) + "% (" + 
             chart_df['Achieved'].astype(str) + "/" + 
@@ -615,7 +582,7 @@ def run():
             y='SLA (%)',
             color='Type',        
             markers=True,        
-            text='Label',  # Gunakan kolom Label custom
+            text='Label',  
             hover_data=['Achieved', 'Total Closed'], 
             title='Pencapaian SLA (%) vs. Bulan'
         )
@@ -625,14 +592,13 @@ def run():
         fig_line.update_layout(
             yaxis_title="SLA Achievement (%)",
             xaxis_title="Bulan",
-            yaxis_range=[0, 115], # Ruang ekstra untuk label 2 baris
+            yaxis_range=[0, 115], 
             xaxis={'categoryorder':'array', 'categoryarray': month_display_order} 
         )
         st.plotly_chart(fig_line, use_container_width=True)
     else:
         st.error("Grafik performa SLA tidak dapat dibuat (data kosong/tidak ada closed).")
 
-    # --- 12. Filter Dinamis ---
     st.divider()
     st.subheader("🔎 Analisis Spesifik Berdasarkan Periode")
     
@@ -655,7 +621,6 @@ def run():
 
     df_combined_full_slice = pd.concat([inc_df_slice, req_df_slice], ignore_index=True)
 
-    # --- 13. Top 3 Breach Time Table ---
     st.subheader("🔥 Top 3 Service Offering dengan Max Breach Terbesar")
     st.caption(f"Menampilkan data untuk: **{time_filter_selection}**")
     
@@ -706,12 +671,9 @@ def run():
         html_bottom += "</tbody></table>"
         st.markdown(html_bottom, unsafe_allow_html=True)
     
-    
-    # --- 14. Occurrence Analysis (DENGAN PILIHAN) ---
     st.subheader("🔎 Occurrence Analysis by Category")
     st.caption(f"Menampilkan data untuk: **{time_filter_selection}**")
     
-    # --- Pilihan Tampilan (Top 3 atau Semua) ---
     view_mode = st.radio(
         "Pilih Tampilan Jumlah Data:",
         ["Top 3 Only", "Show All Data"],
@@ -719,9 +681,7 @@ def run():
         key="view_mode_selector"
     )
     
-    # Tentukan limit berdasarkan pilihan
     limit_val = 3 if view_mode == "Top 3 Only" else None
-    # ------------------------------------------
     
     possible_kategori_cols = ['Kategori', 'Category', 'Item', 'Tipe']
     kategori_col = find_column(df_inc_all.columns, possible_kategori_cols)
@@ -740,7 +700,7 @@ def run():
             data_col=service_col, 
             group_by_col=kategori_col, 
             static_type=None,
-            limit=limit_val # Kirim limit sesuai pilihan user
+            limit=limit_val 
         )
         st.markdown(css_tabel + html_incident, unsafe_allow_html=True)
 
@@ -755,12 +715,10 @@ def run():
             data_col=item_col,      
             group_by_col=item_col,   
             static_type="Request",
-            limit=limit_val # Kirim limit sesuai pilihan user
+            limit=limit_val 
         )
         st.markdown(css_tabel + html_request, unsafe_allow_html=True)
 
-    
-    # --- 15. Solved vs Active/Pending Status ---
     st.subheader("📊 Solved vs Active/Pending Status")
     st.caption(f"Menampilkan status untuk periode: **{time_filter_selection}**")
 

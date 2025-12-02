@@ -5,11 +5,7 @@ import io
 import re
 from datetime import time, timedelta, datetime
 import numpy as np
-import calendar 
-
-# =========================================================
-# DEFINISI FUNGSI GLOBAL
-# =========================================================
+import calendar
 
 def normalize_label(s: str) -> str:
     if pd.isna(s):
@@ -64,15 +60,10 @@ def calculate_time_breach(row, date_created_col, date_resolved_col):
         resolution_duration = row[date_resolved_col] - row[date_created_col]
         sla_timedelta = pd.to_timedelta(row['Waktu SLA'], unit='h')
         breach = resolution_duration - sla_timedelta
-        # Mengembalikan dalam HARI
         return breach.total_seconds() / (3600 * 24) 
     else:
         return pd.NA
     
-# =========================================================
-# FUNGSI UTAMA STREAMLIT
-# =========================================================
-
 def run():
     st.set_page_config(layout="wide") 
 
@@ -126,7 +117,6 @@ def run():
     else:
         st.warning("Kolom 'Resolved' atau 'Tiket Ditutup' tidak ditemukan. Perhitungan SLA dan Time Breach mungkin tidak akurat.")
 
-    # Deteksi Bulan dan Total Jam
     total_hours_in_month = 744 
     
     first_valid_date = df[date_created_col].dropna().min()
@@ -208,12 +198,9 @@ def run():
         sla_open = len(df)
     total_semua = len(df)
 
-    # =========================================================
-    # MODIFIKASI 1: LAYOUT REKAPITULASI SLA (SIDE BY SIDE)
-    # =========================================================
     st.subheader("✨ Rekapitulasi SLA")
     
-    col_rekap_kiri, col_rekap_kanan = st.columns([1, 1]) # Membagi 2 kolom sama besar
+    col_rekap_kiri, col_rekap_kanan = st.columns([1, 1])
 
     with col_rekap_kiri:
         st.markdown("### Ringkasan")
@@ -273,23 +260,19 @@ def run():
     possible_service_cols = ['Service offering', 'Service Offering', 'ServiceOffering', 'Service offering']
     service_col = next((c for c in possible_service_cols if c in df.columns), None)
 
-    # =========================================================
-    # MODIFIKASI CSS: TABEL SEMPIT / AUTO WIDTH
-    # =========================================================
     css_tabel = """
     <style>
         .manual-sla-table {
-            width: auto; /* Mengikuti konten, tidak stretch 100% */
-            min-width: 50%; /* Tapi jangan terlalu kecil */
+            width: 100%; /* FIT TO LAYOUT */
             border-collapse: collapse;
             text-align: left;
             font-size: 13px;
         }
         .manual-sla-table th, .manual-sla-table td {
-            padding: 4px 8px; /* Padding rapat */
+            padding: 6px 10px;
             border-bottom: 1px solid #EEEEEE;
             vertical-align: middle;
-            white-space: nowrap; /* Mencegah teks turun ke bawah jika bisa lurus */
+            white-space: nowrap;
         }
         .manual-sla-table th {
             background-color: #F0F2F6;
@@ -345,150 +328,107 @@ def run():
             df.groupby(service_col)
             .agg(
                 Jumlah_Tiket=('SLA', 'count'),
-                Total_Waktu_Breach=('Time Breach', lambda x: x[x > 0].sum()), # Dalam HARI
+                Total_Waktu_Breach=('Time Breach', lambda x: x[x > 0].sum()),
                 SLA_Tercapai=('SLA', lambda x: (x == 1).sum()),
                 Jumlah_Tiket_Breach=('SLA', lambda x: (x == 0).sum()),
                 Total_Waktu_SLA_Alokasi=('Waktu SLA', 'sum') 
             )
             .reset_index()
         )
-        
         sla_service_agg['Total Waktu Breach (jam)'] = sla_service_agg['Total_Waktu_Breach'] * 24
 
-        # 1. Hitung SLA Pencapaian % (untuk TOP 3)
         def hitung_sla_pencapaian_waktu(row, total_jam):
             total_alokasi = row['Total_Waktu_SLA_Alokasi']
             total_breach_jam = row['Total Waktu Breach (jam)'] 
-
-            if total_alokasi <= 0:
-                return 0.0
-            
+            if total_alokasi <= 0: return 0.0
             pencapaian = (total_jam - total_breach_jam) / total_jam
             hasil_persen = max(0, pencapaian) * 100
             return int(hasil_persen + 0.5)
 
         sla_service_agg['SLA_Pencapaian_%'] = sla_service_agg.apply(
-            lambda r: hitung_sla_pencapaian_waktu(r, total_hours_in_month), 
-            axis=1
+            lambda r: hitung_sla_pencapaian_waktu(r, total_hours_in_month), axis=1
         )
 
-        # 2. Hitung SLA Breach % (untuk BOTTOM 3)
         def hitung_sla_breach_persen(row, total_jam):
             total_breach_jam = row['Total Waktu Breach (jam)']
-            if total_jam <= 0:
-                return 0.0
-            
+            if total_jam <= 0: return 0.0
             breach_persen = (total_breach_jam / total_jam) * 100
             return int(breach_persen + 0.5)
 
         sla_service_agg['SLA_Breach_%'] = sla_service_agg.apply(
-            lambda r: hitung_sla_breach_persen(r, total_hours_in_month),
-            axis=1
+            lambda r: hitung_sla_breach_persen(r, total_hours_in_month), axis=1
         )
 
-        # Top 3 (Berdasarkan SLA_Pencapaian_%)
         sla_service_agg['No_Top'] = sla_service_agg['SLA_Pencapaian_%'].rank(method='dense', ascending=False).astype(int)
         top3_sla = sla_service_agg[sla_service_agg['No_Top'] <= 3].sort_values(by=['No_Top', service_col])
         top3_sla = top3_sla[['No_Top', service_col, 'Jumlah_Tiket', 'Total Waktu Breach (jam)', 'SLA_Pencapaian_%']]
         top3_sla.columns = ['No', 'Service Offering', 'Σ Tiket (Closed)', 'Total Waktu Breach (jam)', 'SLA (%)']
 
-        # =========================================================
-        # MODIFIKASI 2: TABEL SEMPIT / DI DALAM KOLOM
-        # =========================================================
-        
-        st.subheader("✨ Top Pencapaian SLA berdasarkan Service Offering (Rank 1-3)")
-        
-        html_top = css_tabel + '<table class="manual-sla-table"><thead><tr>'
-        html_top += "<th>No</th>"
-        html_top += "<th>Service Offering</th>"
-        html_top += "<th>Σ Tiket (Closed)</th>"
-        html_top += "<th>Total Waktu Breach (jam)</th>"
-        html_top += "<th>SLA (%)</th>"
-        html_top += "</tr></thead><tbody>"
-
-        for no in sorted(top3_sla['No'].unique()):
-            group = top3_sla[top3_sla['No'] == no]
-            rowspan = len(group)
-            for i, (_, row) in enumerate(group.iterrows()):
-                html_top += "<tr>"
-                if i == 0:
-                    html_top += f"<td rowspan='{rowspan}'>{no}</td>"
-                html_top += f"<td>{row['Service Offering']}</td>"
-                html_top += f"<td>{row['Σ Tiket (Closed)']}</td>"
-                html_top += f"<td>{format_hari_jam_menit(row['Total Waktu Breach (jam)'])}</td>" 
-                html_top += f"<td>{row['SLA (%)']}%</td>"
-                html_top += "</tr>"
-        html_top += "</tbody></table>"
-        
-        # Memasukkan tabel ke kolom agar tidak full-width (menyempit)
-        col_top_1, col_top_2 = st.columns([1.5, 1])
-        with col_top_1:
-            st.markdown(html_top, unsafe_allow_html=True)
-
-        # Bottom 3 (Berdasarkan SLA_Breach_%)
         sla_service_agg['No_Bottom'] = sla_service_agg['SLA_Breach_%'].rank(method='dense', ascending=False).astype(int)
         bottom3_sla = sla_service_agg[sla_service_agg['No_Bottom'] <= 3].sort_values(by=['No_Bottom', service_col])
         bottom3_sla = bottom3_sla[['No_Bottom', service_col, 'Jumlah_Tiket', 'Total Waktu Breach (jam)', 'SLA_Breach_%']] 
         bottom3_sla.columns = ['No', 'Service Offering', 'Σ Tiket (Closed)', 'Total Waktu Breach (jam)', 'SLA (%)']
         
-        st.subheader("✨ Bottom Pencapaian SLA berdasarkan Service Offering (Rank 1-3)")
-        st.caption(f"SLA (%) di tabel ini dihitung berdasarkan: (Total Waktu Breach / {total_hours_in_month} jam)")
-        
-        html_bottom = css_tabel + '<table class="manual-sla-table"><thead><tr>'
-        html_bottom += "<th>No</th>"
-        html_bottom += "<th>Service Offering</th>"
-        html_bottom += "<th>Σ Tiket (Closed)</th>"
-        html_bottom += "<th>Total Waktu Breach (jam)</th>"
-        html_bottom += "<th>SLA (%)</th>"
-        html_bottom += "</tr></thead><tbody>"
+        html_top = css_tabel + '<table class="manual-sla-table"><thead><tr>'
+        html_top += "<th>No</th><th>Service Offering</th><th>Σ Tiket</th><th>Total Breach (jam)</th><th>SLA (%)</th></tr></thead><tbody>"
+        for no in sorted(top3_sla['No'].unique()):
+            group = top3_sla[top3_sla['No'] == no]
+            rowspan = len(group)
+            for i, (_, row) in enumerate(group.iterrows()):
+                html_top += "<tr>"
+                if i == 0: html_top += f"<td rowspan='{rowspan}'>{no}</td>"
+                html_top += f"<td>{row['Service Offering']}</td><td>{row['Σ Tiket (Closed)']}</td><td>{format_hari_jam_menit(row['Total Waktu Breach (jam)'])}</td><td>{row['SLA (%)']}%</td></tr>"
+        html_top += "</tbody></table>"
 
+        html_bottom = css_tabel + '<table class="manual-sla-table"><thead><tr>'
+        html_bottom += "<th>No</th><th>Service Offering</th><th>Σ Tiket</th><th>Total Breach (jam)</th><th>SLA (%)</th></tr></thead><tbody>"
         for no in sorted(bottom3_sla['No'].unique()):
             group = bottom3_sla[bottom3_sla['No'] == no]
             rowspan = len(group)
             for i, (_, row) in enumerate(group.iterrows()):
                 html_bottom += "<tr>"
-                if i == 0:
-                    html_bottom += f"<td rowspan='{rowspan}'>{no}</td>"
-                html_bottom += f"<td>{row['Service Offering']}</td>"
-                html_bottom += f"<td>{row['Σ Tiket (Closed)']}</td>"
-                html_bottom += f"<td>{format_jam_menit_saja(row['Total Waktu Breach (jam)'])}</td>"
-                html_bottom += f"<td>-{row['SLA (%)']}%</td>"
-                html_bottom += "</tr>" 
+                if i == 0: html_bottom += f"<td rowspan='{rowspan}'>{no}</td>"
+                html_bottom += f"<td>{row['Service Offering']}</td><td>{row['Σ Tiket (Closed)']}</td><td>{format_jam_menit_saja(row['Total Waktu Breach (jam)'])}</td><td>-{row['SLA (%)']}%</td></tr>" 
         html_bottom += "</tbody></table>"
 
-        # Memasukkan tabel ke kolom agar tidak full-width (menyempit)
-        col_bot_1, col_bot_2 = st.columns([1.5, 1])
-        with col_bot_1:
+        st.divider()
+
+        st.header("SLA Evaluation")
+        st.markdown("Pencapaian SLA berdasarkan Service Offering :")
+        col_s1_left, col_s1_right = st.columns([1, 1])
+
+        with col_s1_left:
+            st.markdown("**Top 3 SLA Service**")
+            st.markdown(html_top, unsafe_allow_html=True)
+            
+            st.markdown("**Bottom 3 SLA Service**")
             st.markdown(html_bottom, unsafe_allow_html=True)
 
-        st.subheader("📊 SLA Persen per Service Offering (Persen Pencapaian)")
-        
-        if 'sla_service_agg' in locals() and service_col in sla_service_agg.columns and 'SLA_Pencapaian_%' in sla_service_agg.columns:
-            chart_data = sla_service_agg.sort_values(by=service_col, ascending=True)
-            fig_sla_percent = px.bar(
-                chart_data,
-                x=service_col,
-                y='SLA_Pencapaian_%',
-                text='SLA_Pencapaian_%',
-                title="SLA Persen per Service Offering (Urut Abjad)"
-            )
-            fig_sla_percent.update_traces(texttemplate='%{text}%', textposition='outside')
-            y_max = chart_data['SLA_Pencapaian_%'].max()
-            fig_sla_percent.update_layout(yaxis_range=[0, max(100, y_max * 1.15)])
-            st.plotly_chart(fig_sla_percent, use_container_width=True)
-        
-        all_tickets_df = df[df['Time Breach'].notna() & df[service_col].notna()].copy()
+        with col_s1_right:
+            chart_config = {'displayModeBar': True, 'modeBarButtonsToRemove': ['zoom2d', 'pan2d', 'select2d', 'lasso2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'resetScale2d'], 'displaylogo': False}
+            
+            if 'SLA_Pencapaian_%' in sla_service_agg.columns:
+                chart_data = sla_service_agg.sort_values(by=service_col, ascending=True)
+                fig_sla_percent = px.bar(chart_data, x=service_col, y='SLA_Pencapaian_%', text='SLA_Pencapaian_%', title="SLA Total per Service Offering")
+                fig_sla_percent.update_traces(texttemplate='%{text}%', textposition='outside')
+                y_max = chart_data['SLA_Pencapaian_%'].max()
+                fig_sla_percent.update_layout(
+                    height=600, 
+                    yaxis_range=[0, max(100, y_max * 1.25)], 
+                    xaxis=dict(fixedrange=True), 
+                    yaxis=dict(fixedrange=True), 
+                    dragmode=False, 
+                    margin=dict(t=50, b=50, l=20, r=20)
+                )
+                st.plotly_chart(fig_sla_percent, use_container_width=True, config=chart_config)
 
+        all_tickets_df = df[df['Time Breach'].notna() & df[service_col].notna()].copy()
         if not all_tickets_df.empty:
             all_tickets_df = all_tickets_df.sort_values(by='Time Breach', ascending=False)
             max_breach_df = all_tickets_df.drop_duplicates(subset=[service_col], keep='first')
             
             if 'sla_service_agg' in locals():
-                max_breach_df = max_breach_df.merge(
-                    sla_service_agg[[service_col, 'Total_Waktu_SLA_Alokasi']],
-                    on=service_col,
-                    how='left'
-                )
+                max_breach_df = max_breach_df.merge(sla_service_agg[[service_col, 'Total_Waktu_SLA_Alokasi']], on=service_col, how='left')
                 max_breach_df['Total_Waktu_SLA_Alokasi'] = max_breach_df['Total_Waktu_SLA_Alokasi'].fillna(0.0)
             else:
                 max_breach_df['Total_Waktu_SLA_Alokasi'] = 0.0 
@@ -496,116 +436,75 @@ def run():
             def hitung_sla_max_breach(row, total_jam):
                 total_alokasi = row['Total_Waktu_SLA_Alokasi'] 
                 max_breach_hari = max(0, row['Time Breach']) 
-
-                if total_alokasi <= 0:
-                    return 0.0 
-                
+                if total_alokasi <= 0: return 0.0 
                 max_breach_jam = max_breach_hari * 24
                 pencapaian = (total_jam - max_breach_jam) / total_jam
                 hasil_persen = max(0, pencapaian) * 100
-                return int(hasil_persen + 0.5)
+                return int(hasil_persen)
 
-            max_breach_df['SLA Service (%)'] = max_breach_df.apply(
-                lambda r: hitung_sla_max_breach(r, total_hours_in_month), 
-                axis=1
-            )
-            
+            max_breach_df['SLA Service (%)'] = max_breach_df.apply(lambda r: hitung_sla_max_breach(r, total_hours_in_month), axis=1)
             max_breach_df['Time Breach (jam)'] = max_breach_df['Time Breach'] * 24 
             max_breach_df['_breach_rank_val'] = max_breach_df['Time Breach'].clip(lower=0)
 
-            top3_min_max_breach = max_breach_df.sort_values(
-                by=['SLA Service (%)', '_breach_rank_val'], 
-                ascending=[False, True]
-            )
-
-            top3_min_max_breach['No'] = top3_min_max_breach['SLA Service (%)'].rank(
-                method='dense',
-                ascending=False
-            ).astype(int)
-            
+            top3_min_max_breach = max_breach_df.sort_values(by=['SLA Service (%)', '_breach_rank_val', service_col], ascending=[False, True, True])
+            top3_min_max_breach['No'] = top3_min_max_breach['SLA Service (%)'].rank(method='dense', ascending=False).astype(int)
             top3_min_max_breach = top3_min_max_breach[top3_min_max_breach['No'] <= 3]
             top3_min_max_breach = top3_min_max_breach.drop(columns=['_breach_rank_val'])
-            
-            st.subheader("🌟 Top 3 Service (Max Breach Terkecil)")
-            st.caption(f"SLA (%) dihitung berdasarkan: ({total_hours_in_month} jam - Max Breach 1 Tiket) / {total_hours_in_month} jam")
+
+            bottom3_max_breach = max_breach_df.sort_values(by='Time Breach', ascending=False)
+            bottom3_max_breach['No'] = bottom3_max_breach['Time Breach'].rank(method='dense', ascending=False).astype(int)
+            bottom3_max_breach = bottom3_max_breach[bottom3_max_breach['No'] <= 3]
 
             html_top_max = css_tabel + '<table class="manual-sla-table"><thead><tr>'
-            html_top_max += "<th>No</th>"
-            html_top_max += "<th>Service Offering</th>"
-            html_top_max += "<th>Waktu Breach (dari 1 tiket)</th>"
-            html_top_max += "<th>SLA Service (%)</th>"
-            html_top_max += "</tr></thead><tbody>"
-
+            html_top_max += "<th>No</th><th>Service Offering</th><th>Waktu Breach</th><th>SLA (%)</th></tr></thead><tbody>"
             for no in sorted(top3_min_max_breach['No'].unique()):
                 group = top3_min_max_breach[top3_min_max_breach['No'] == no]
                 rowspan = len(group)
                 for i, (_, row) in enumerate(group.iterrows()):
                     html_top_max += "<tr>"
-                    if i == 0:
-                        html_top_max += f"<td rowspan='{rowspan}'>{no}</td>"
-                    html_top_max += f"<td>{row[service_col]}</td>"
-                    html_top_max += f"<td>{format_hari_jam_menit(row['Time Breach (jam)'])}</td>"
-                    html_top_max += f"<td>{row['SLA Service (%)']}%</td>"
-                    html_top_max += "</tr>"
+                    if i == 0: html_top_max += f"<td rowspan='{rowspan}'>{no}</td>"
+                    html_top_max += f"<td>{row[service_col]}</td><td>{format_hari_jam_menit(row['Time Breach (jam)'])}</td><td>{row['SLA Service (%)']}%</td></tr>"
             html_top_max += "</tbody></table>"
-            
-            # Memasukkan tabel ke kolom agar tidak full-width (menyempit)
-            col_tm_1, col_tm_2 = st.columns([1.5, 1])
-            with col_tm_1:
-                st.markdown(html_top_max, unsafe_allow_html=True)
-
-            bottom3_max_breach = max_breach_df.sort_values(by='Time Breach', ascending=False)
-            bottom3_max_breach['No'] = bottom3_max_breach['Time Breach'].rank(method='dense', ascending=False).astype(int)
-            bottom3_max_breach = bottom3_max_breach[bottom3_max_breach['No'] <= 3]
-            
-            st.subheader("🔥 Bottom 3 Service (Max Breach Terbesar)")
-            st.caption(f"SLA (%) dihitung berdasarkan: ({total_hours_in_month} jam - Max Breach 1 Tiket) / {total_hours_in_month} jam")
 
             html_bottom_max = css_tabel + '<table class="manual-sla-table"><thead><tr>'
-            html_bottom_max += "<th>No</th>"
-            html_bottom_max += "<th>Service Offering</th>"
-            html_bottom_max += "<th>Waktu Breach (dari 1 tiket)</th>"
-            html_bottom_max += "<th>No Tiket</th>"
-            html_bottom_max += "<th>SLA Service (%)</th>"
-            html_bottom_max += "</tr></thead><tbody>"
-
+            html_bottom_max += "<th>No</th><th>Service Offering</th><th>Waktu Breach</th><th>No Tiket</th><th>SLA (%)</th></tr></thead><tbody>"
             for no in sorted(bottom3_max_breach['No'].unique()):
                 group = bottom3_max_breach[bottom3_max_breach['No'] == no]
                 rowspan = len(group)
                 for i, (_, row) in enumerate(group.iterrows()):
                     html_bottom_max += "<tr>"
-                    if i == 0:
-                        html_bottom_max += f"<td rowspan='{rowspan}'>{no}</td>"
-                    html_bottom_max += f"<td>{row[service_col]}</td>"
-                    html_bottom_max += f"<td>{format_hari_jam_menit(row['Time Breach (jam)'])}</td>"
-                    html_bottom_max += f"<td>{row[tiket_col]}</td>"
-                    html_bottom_max += f"<td>{row['SLA Service (%)']}%</td>"
-                    html_bottom_max += "</tr>"
+                    if i == 0: html_bottom_max += f"<td rowspan='{rowspan}'>{no}</td>"
+                    html_bottom_max += f"<td>{row[service_col]}</td><td>{format_hari_jam_menit(row['Time Breach (jam)'])}</td><td>{row[tiket_col]}</td><td>{row['SLA Service (%)']}%</td></tr>"
             html_bottom_max += "</tbody></table>"
 
-            # Memasukkan tabel ke kolom agar tidak full-width (menyempit)
-            col_bm_1, col_bm_2 = st.columns([1.5, 1])
-            with col_bm_1:
+            st.divider()
+            
+            st.header("SLA Tiket Max Breach per Service Offering")
+            st.markdown("Pencapaian SLA Max Breach per service offering :")
+
+            col_s2_left, col_s2_right = st.columns([1, 1])
+
+            with col_s2_left:
+                st.markdown("**Top 3 SLA Service**")
+                st.markdown(html_top_max, unsafe_allow_html=True)
+                
+                st.markdown("**Bottom 3 SLA Service**")
                 st.markdown(html_bottom_max, unsafe_allow_html=True)
 
-            st.subheader("📊 SLA Tiket Max Breach per Service Offering (Persen Pencapaian)")
-            st.caption("Menampilkan SLA per service, dihitung berdasarkan pencapaian (1 tiket max breach).")
-
-            if 'max_breach_df' in locals() and service_col in max_breach_df.columns and 'SLA Service (%)' in max_breach_df.columns:
+            with col_s2_right:                
                 chart_data_max_breach = max_breach_df.sort_values(by=service_col, ascending=True)
-                fig_max_breach = px.bar(
-                    chart_data_max_breach, 
-                    x=service_col,           
-                    y='SLA Service (%)',
-                    text='SLA Service (%)', 
-                    title="SLA Tiket Max Breach per Service Offering (Urut Abjad)"
-                )
+                fig_max_breach = px.bar(chart_data_max_breach, x=service_col, y='SLA Service (%)', text='SLA Service (%)', title="SLA Tiket Max Breach per Service Offering")
                 fig_max_breach.update_traces(texttemplate='%{text}%', textposition='outside')
                 y_max_2 = chart_data_max_breach['SLA Service (%)'].max()
-                fig_max_breach.update_layout(yaxis_range=[0, max(100, y_max_2 * 1.15)])
-                st.plotly_chart(fig_max_breach, use_container_width=True)
-            else:
-                st.warning("Tidak dapat membuat chart 'SLA Tiket Max Breach per Service Offering'. Data 'max_breach_df' tidak ditemukan.")
+                fig_max_breach.update_layout(
+                    height=600, 
+                    yaxis_range=[0, max(100, y_max_2 * 1.25)], 
+                    xaxis=dict(fixedrange=True), 
+                    yaxis=dict(fixedrange=True), 
+                    dragmode=False, 
+                    margin=dict(t=50, b=50, l=20, r=20)
+                )
+                st.plotly_chart(fig_max_breach, use_container_width=True, config=chart_config)
 
     def sla_status(row):
         sla_val = row.get("SLA")
