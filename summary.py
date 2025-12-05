@@ -489,10 +489,67 @@ def run():
                 color="Type",
                 barmode="group",
                 text_auto=True,
-                category_orders={"Month": month_order}
+                category_orders={"Month": month_order},
+                color_discrete_sequence=['#FF4B4B', '#8B0000'] 
             )
             st.plotly_chart(fig_monthly_active, use_container_width=True)
             
+    st.markdown("#### **Total Tiket (Drill-down)**")
+    st.write("Klik lingkaran bagian dalam (Incident/Request) untuk melihat detail status Active/Solved.")
+
+    if not df_inc_all.empty and inc_res_col:
+        df_inc_sb = df_inc_all.copy()
+        df_inc_sb['Status'] = df_inc_sb[inc_res_col].apply(lambda x: 'Active/Pending' if pd.isna(x) else 'Solved')
+        df_inc_sb['Type'] = 'Incident'
+        df_inc_sb = df_inc_sb[['Type', 'Status']]
+    else:
+        df_inc_sb = pd.DataFrame(columns=['Type', 'Status'])
+
+    if not df_req_all.empty and req_res_col:
+        df_req_sb = df_req_all.copy()
+        df_req_sb['Status'] = df_req_sb[req_res_col].apply(lambda x: 'Active/Pending' if pd.isna(x) else 'Solved')
+        df_req_sb['Type'] = 'Request'
+        df_req_sb = df_req_sb[['Type', 'Status']]
+    else:
+        df_req_sb = pd.DataFrame(columns=['Type', 'Status'])
+
+    df_sunburst_raw = pd.concat([df_inc_sb, df_req_sb], ignore_index=True)
+
+    if not df_sunburst_raw.empty:
+            df_sunburst_agg = df_sunburst_raw.groupby(['Type', 'Status']).size().reset_index(name='Count')
+            
+            sunburst_colors = {
+                'Incident': '#0074D9',
+                'Request': '#1E90FF', 
+
+                'Active/Pending': '#FF4136',
+                'Solved': '#87CEFA',  
+                
+                '(?)': '#F0F2F6'
+            }
+
+            fig_sunburst = px.sunburst(
+                df_sunburst_agg,
+                path=['Type', 'Status'],
+                values='Count'
+            )
+
+            fig_sunburst.update_traces(
+                marker=dict(
+                    colors=[
+                        sunburst_colors.get(str(label), '#DDDDDD')
+                        for label in fig_sunburst.data[0].labels
+                    ],
+                    line=dict(color='#FFFFFF', width=1)
+                ),
+                textinfo="label+value+percent entry"
+            )
+
+            fig_sunburst.update_layout(margin=dict(t=10, l=10, r=10, b=10))
+            st.plotly_chart(fig_sunburst, use_container_width=True)
+    else:
+        st.info("Tidak ada data untuk menampilkan chart komposisi.")
+
     st.divider()
 
     contact_col_incident_names = ['Channel', 'Contact Type', 'ContactType', 'Contact type']
@@ -655,13 +712,11 @@ def run():
 
     st.subheader("Performa SLA")
 
-    # Hitung summary SLA per bulan
     inc_sla_monthly = df_inc_all.groupby('Month').apply(get_sla_summary)
     req_sla_monthly = df_req_all.groupby('Month').apply(get_sla_summary)
 
     data_points = []
     
-    # Proses data Incident
     for month, stats in inc_sla_monthly.items():
         if stats['total_closed'] > 0:
             data_points.append({
@@ -672,7 +727,6 @@ def run():
                 'Total Closed': stats['total_closed']   
             })
             
-    # Proses data Request
     for month, stats in req_sla_monthly.items():
         if stats['total_closed'] > 0:
             data_points.append({
@@ -686,43 +740,72 @@ def run():
     if data_points:
         chart_df = pd.DataFrame(data_points).sort_values(by='Month')
         
-        # Label text di chart
         chart_df['Label'] = (
-            chart_df['SLA (%)'].map('{:.1f}'.format) + "% (" + 
+            chart_df['SLA (%)'].map('{:.1f}'.format) + "%" +
+            "<br>" +
+            "(" + 
             chart_df['Achieved'].astype(str) + "/" + 
             chart_df['Total Closed'].astype(str) + ")"
         )
         
-        # Format tampilan Bulan (Menghilangkan YYYY-MM di depan agar lebih rapi)
-        # Asumsi format 'Month' adalah "YYYY-MM (NamaBulan)"
         chart_df['Month_Display'] = chart_df['Month'].str.split('(').str[1].str.replace(')', '') + " " + chart_df['Month'].str.split('-').str[0]
         
-        # Mengurutkan berdasarkan month_order yang sudah dibuat di bagian Volume Tiket
-        # agar urutan bulan kronologis (bukan abjad)
         valid_months = [m for m in month_order if m in chart_df['Month'].unique()]
         month_display_map = chart_df.drop_duplicates(subset=['Month']).set_index('Month')['Month_Display'].to_dict()
         month_display_order = [month_display_map[m] for m in valid_months if m in month_display_map]
 
-        fig_line = px.line(
-            chart_df,
-            x='Month_Display',
-            y='SLA (%)',
-            color='Type',        
-            markers=True,        
-            text='Label',   
-            hover_data=['Achieved', 'Total Closed'], 
-            title='Pencapaian SLA (%) vs. Bulan'
-        )
-        
-        fig_line.update_traces(textposition='top center')
-        
-        fig_line.update_layout(
-            yaxis_title="SLA Achievement (%)",
-            xaxis_title="Bulan",
-            yaxis_range=[0, 115], # Memberi ruang untuk text label di atas 100%
-            xaxis={'categoryorder':'array', 'categoryarray': month_display_order} 
-        )
-        st.plotly_chart(fig_line, use_container_width=True)
+        col_sla1, col_sla2 = st.columns(2)
+
+        with col_sla1:
+            st.markdown("##### Incident")
+            df_inc_chart = chart_df[chart_df['Type'] == 'Incident']
+            
+            if not df_inc_chart.empty:
+                fig_inc = px.line(
+                    df_inc_chart,
+                    x='Month_Display',
+                    y='SLA (%)',
+                    markers=True,
+                    text='Label',
+                    hover_data=['Achieved', 'Total Closed'],
+                )
+                fig_inc.update_traces(line_color='#FF4B4B', textposition='top center')
+                fig_inc.update_layout(
+                    yaxis_title="SLA Achievement (%)",
+                    xaxis_title="Bulan",
+                    yaxis_range=[0, 115],
+                    xaxis={'categoryorder':'array', 'categoryarray': month_display_order},
+                    margin=dict(t=20, b=20, l=40, r=20)
+                )
+                st.plotly_chart(fig_inc, use_container_width=True)
+            else:
+                st.info("Tidak ada data Incident untuk ditampilkan.")
+
+        with col_sla2:
+            st.markdown("##### Request")
+            df_req_chart = chart_df[chart_df['Type'] == 'Request']
+            
+            if not df_req_chart.empty:
+                fig_req = px.line(
+                    df_req_chart,
+                    x='Month_Display',
+                    y='SLA (%)',
+                    markers=True,
+                    text='Label',
+                    hover_data=['Achieved', 'Total Closed'],
+                )
+                fig_req.update_traces(line_color='#305496', textposition='top center')
+                fig_req.update_layout(
+                    yaxis_title="SLA Achievement (%)",
+                    xaxis_title="Bulan",
+                    yaxis_range=[0, 115],
+                    xaxis={'categoryorder':'array', 'categoryarray': month_display_order},
+                    margin=dict(t=20, b=20, l=40, r=20)
+                )
+                st.plotly_chart(fig_req, use_container_width=True)
+            else:
+                st.info("Tidak ada data Request untuk ditampilkan.")
+
     else:
         st.info("Grafik performa SLA tidak dapat dibuat (data kosong atau belum ada tiket yang ditutup).")
 
