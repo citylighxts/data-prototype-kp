@@ -7,6 +7,49 @@ from datetime import time, timedelta, datetime
 import numpy as np
 import calendar
 
+def get_table_css():
+    return """
+    <style>
+        .manual-sla-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: sans-serif;
+            font-size: 13px;
+        }
+        /* Header Blue Style */
+        .manual-sla-table th {
+            background-color: #305496; /* Dark Blue */
+            color: white;
+            padding: 8px 10px;
+            border: 1px solid white; /* White borders */
+            text-align: center;
+            font-weight: bold;
+        }
+        /* General Cell Style */
+        .manual-sla-table td {
+            padding: 6px 10px;
+            border: 1px solid white; /* White grid lines */
+            vertical-align: middle;
+            color: black;
+        }
+        /* Grouping Column (No/Type) - Gray Background */
+        .col-no {
+            background-color: #D9D9D9; 
+            font-weight: bold;
+            text-align: center;
+            vertical-align: middle;
+        }
+        /* Data Row - Light Gray Background */
+        .row-data {
+            background-color: #E9E9E9; 
+        }
+        /* Center align numbers */
+        .text-center {
+            text-align: center;
+        }
+    </style>
+    """
+
 def find_column(df_cols, possible_names):
     """Mencari nama kolom yang cocok pertama dalam list."""
     for col in possible_names:
@@ -147,10 +190,7 @@ def get_sla_summary(df_processed):
 
 def display_occurrence_table(df_slice, data_col, group_by_col, static_type=None, limit=None):
     """
-    Membuat tabel HTML untuk Occurrence.
-    
-    Parameters:
-    - limit: Integer (misal 3) untuk Top N, atau None untuk semua.
+    Membuat tabel HTML untuk Occurrence dengan STYLE BARU.
     """
     
     if not data_col in df_slice.columns:
@@ -188,25 +228,44 @@ def display_occurrence_table(df_slice, data_col, group_by_col, static_type=None,
     html_table += "</tr></thead><tbody>"
 
     if final_df.empty:
-        html_table += "<tr><td colspan='3' style='text-align:center;'>Tidak ada data untuk ditampilkan.</td></tr>"
+        html_table += "<tr class='row-data'><td colspan='3' style='text-align:center;'>Tidak ada data untuk ditampilkan.</td></tr>"
     else:
         for type_name in final_df['Type'].unique():
             group = final_df[final_df['Type'] == type_name]
             rowspan = len(group)
             
             for i, (_, row) in enumerate(group.iterrows()):
-                html_table += "<tr>"
+                html_table += "<tr class='row-data'>"
                 if i == 0:
-                    html_table += f"<td rowspan='{rowspan}'>{row['Type']}</td>"
+                    html_table += f"<td rowspan='{rowspan}' class='col-no'>{row['Type']}</td>"
                 html_table += f"<td>{row[data_col]}</td>"
-                html_table += f"<td>{row['Number of Case']}</td>"
+                html_table += f"<td class='text-center'>{row['Number of Case']}</td>"
                 html_table += "</tr>"
     
     html_table += "</tbody></table>"
     return html_table
 
+def make_simple_html_table(df):
+    """Konversi DataFrame sederhana ke Tabel HTML dengan Style Baru."""
+    html = '<table class="manual-sla-table"><thead><tr>'
+    html += f"<th>Status</th>"
+    for col in df.columns:
+        html += f"<th>{col}</th>"
+    html += "</tr></thead><tbody>"
+
+    for idx, row in df.iterrows():
+        html += "<tr class='row-data'>"
+        html += f"<td class='col-no'>{idx}</td>"
+        for val in row:
+            html += f"<td class='text-center'>{val}</td>"
+        html += "</tr>"
+    html += "</tbody></table>"
+    return html
+
 
 def run():
+    st.markdown(get_table_css(), unsafe_allow_html=True)
+
     st.markdown(
         """
         <h1 style="display: flex; align-items: center; gap: 10px;">
@@ -217,29 +276,6 @@ def run():
         """,
         unsafe_allow_html=True
     )
-    st.write("Upload file Incident & Request. Sistem akan otomatis mendeteksi bulan dari data.")
-
-    css_tabel = """
-    <style>
-        .manual-sla-table {
-            width: 100%;
-            border-collapse: collapse;
-            text-align: left;
-        }
-        .manual-sla-table th, .manual-sla-table td {
-            padding: 8px 10px;
-            border-bottom: 1px solid #EEEEEE;
-            vertical-align: top;
-        }
-        .manual-sla-table th {
-            background-color: #F0F2F6;
-            text-align: left;
-        }
-        .manual-sla-table tr:hover {
-            background-color: #F5F5F5;
-        }
-    </style>
-    """
     
     sla_mapping_hours = {
         '1 - Critical - 1 - High': 4.0,
@@ -256,7 +292,28 @@ def run():
         '4 - Low - 3 - Low': 48.0
     }
 
-    st.subheader("1. Pengaturan File")
+    regional_3_locations = [
+        "P. Lembar", "Regional 3", "P. Batulicin", "R. Jawa", "Terminal Celukan Bawang",
+        "Sub Regional BBN", "P. Tg. Emas", "P. Bumiharjo", "Tanjung Perak", "R. Bali Nusra",
+        "P. Badas", "TANJUNGPERAK", "TANJUNGEMAS/KEUANGAN", "TANJUNGEMAS", "P. Tg. Intan",
+        "BANJARMASIN/TPK", "KOTABARU/MEKARPUTIH", "P. Waingapu", "R. Kalimantan", "Terminal Nilam",
+        "Terminal Kumai", "P. Kalimas", "P. Tg. Wangi", "P. Gresik", "P. Kotabaru",
+        "BANJARMASIN/KOMERSIAL", "TANJUNGWANGI/TEKNIK", "Sub Regional Kalimantan", "GRESIK/TERMINAL",
+        "Terminal Kota Baru", "P. Sampit", "BANJARMASIN/TMP", "P. Bagendang", "BANJARMASIN/PDS",
+        "TENAU/KALABAHI", "P. Bima", "P. Tenau Kupang", "Terminal Lembar", "P. Tegal",
+        "Terminal Trisakti", "BENOA/OPKOM", "P. Benoa", "BANJARMASIN/TEKNIK", "BANJARMASIN/PBJ",
+        "TANJUNGINTAN", "KOTABARU", "TENAU", "Sub Regional Jawa Timur", "KUMAI/OPKOM",
+        "Terminal Batulicin", "Terminal Gresik", "KUMAI/KEUPER", "LEMBAR/KEUPER", "P. Kalabahi",
+        "BIMA/BADAS", "Terminal Jamrud", "TENAU/WAINGAPU", "Terminal Benoa", "P. Tg. Tembaga",
+        "BIMA/PDS", "BENOA/SUK", "P. Clk. Bawang", "KUMAI/BUMIHARJO", "P. Pulang Pisau",
+        "Terminal Labuan Bajo", "P. Maumere", "BENOA/KEUANGAN", "BENOA/PKWT", "Terminal Kalimas",
+        "BANJARMASIN/KEUANGAN", "BENOA/PEMAGANG", "GRESIK/KEUANGAN", "Terminal Petikemas Banjarmasin",
+        "CELUKANBAWANG", "P. Ende-Ippi", "SAMPIT/BAGENDANG", "Terminal Bima", "KOTABARU/KEPANDUAN",
+        "Terminal Sampit", "Terminal Kupang", "BENOA/TEKNIK", "Terminal Maumere", "PROBOLINGGO/PLS",
+        "SAMPIT/PKWT", "P. Labuan Bajo", "P. Kalianget", "Banjarmasin", "Terminal Waingapu", "MAUMERE/ENDE"
+    ]
+
+    st.subheader("Upload File")
     num_months = st.selectbox(
         "Pilih jumlah periode/bulan yang akan dianalisis:",
         options=list(range(1, 13)),
@@ -309,16 +366,7 @@ def run():
         df_processed = process_sla_dataframe(df_raw, f"Request (File {i+1})", sla_mapping_hours)
         list_df_req_processed.append(df_processed)
 
-    st.markdown(
-        """
-        <h1 style="display: flex; align-items: center; gap: 10px;">
-            <img src="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/1f9ea.svg" 
-                 width="40" height="40">
-            2. Data Filter (Berlaku untuk semua file)
-        </h1>
-        """,
-        unsafe_allow_html=True
-    )
+    st.subheader("Data Filter")
     
     df_combined_raw = pd.concat(list_df_inc_raw + list_df_req_raw, ignore_index=True)
 
@@ -328,8 +376,8 @@ def run():
 
     if loc_col:
         regional_option = st.radio(
-            "Pilih Lokasi/Regional:",
-            options=["All", "Regional 3"],
+            "Filter Lokasi:",
+            options=["All", "Regional 3 (Request)"],
             horizontal=True,
             key="regional_filter_summary"
         )
@@ -341,35 +389,28 @@ def run():
     total_rows_after_filter = 0
 
     for df_proc in list_df_inc_processed:
-        df_filtered = df_proc.copy()
-        if regional_option == "Regional 3":
-            loc_col_in_df = find_column(df_filtered.columns, possible_loc_cols)
-            if loc_col_in_df:
-                df_filtered = df_filtered[
-                    df_filtered[loc_col_in_df].astype(str).str.contains("Regional 3", case=False, na=False)
-                ]
-        list_df_inc_filtered.append(df_filtered)
-        total_rows_after_filter += len(df_filtered)
+        list_df_inc_filtered.append(df_proc.copy())
+        total_rows_after_filter += len(df_proc)
 
     for df_proc in list_df_req_processed:
         df_filtered = df_proc.copy()
-        if regional_option == "Regional 3":
+        if regional_option == "Regional 3 (Request)":
             loc_col_in_df = find_column(df_filtered.columns, possible_loc_cols)
             if loc_col_in_df:
                 df_filtered = df_filtered[
-                    df_filtered[loc_col_in_df].astype(str).str.contains("Regional 3", case=False, na=False)
+                    df_filtered[loc_col_in_df].astype(str).str.strip().isin(regional_3_locations)
                 ]
         list_df_req_filtered.append(df_filtered)
         total_rows_after_filter += len(df_filtered)
 
-    st.markdown(f"**Total data setelah filter:** {total_rows_after_filter} baris")
+    st.markdown(f"**Total data yang diolah:** {total_rows_after_filter} baris")
     del df_combined_raw
 
     df_inc_all = pd.concat(list_df_inc_filtered, ignore_index=True)
     df_req_all = pd.concat(list_df_req_filtered, ignore_index=True)
     df_combined_full = pd.concat([df_inc_all, df_req_all], ignore_index=True)
 
-    st.subheader("📈 Volume Tiket (Setelah Filter)")
+    st.subheader("Volume Tiket")
 
     possible_resolved_cols = ['Resolved', 'Tiket Ditutup', 'Closed', 'Closed At', 'Tiket ditutup']
     
@@ -383,7 +424,6 @@ def run():
     total_active_incident = df_inc_all[inc_res_col].isna().sum() if inc_res_col else 0
     total_active_request = df_req_all[req_res_col].isna().sum() if req_res_col else 0
 
-    st.markdown("<h4>Ringkasan Total (Gabungan)</h4>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns(3)
     col1.metric("Total Tiket Insiden", f"{total_incident:,}")
     col2.metric("Total Tiket Request", f"{total_request:,}")
@@ -470,218 +510,159 @@ def run():
         df_combined_channel = pd.concat([df_inc_slim, df_req_slim], ignore_index=True)
         df_combined_channel['Channel'] = df_combined_channel['Channel'].fillna('Unknown').astype(str).str.strip()
 
-    st.subheader("💻 Analisis Self-Service (ESS)")
-    if not df_combined_channel.empty:
-        ess_keywords = ['ess', 'self-service', 'self service']
-        is_ess = df_combined_channel['Channel'].str.lower().isin(ess_keywords)
-        total_ess_tickets = int(is_ess.sum())
-        ess_percentage = (total_ess_tickets / total_all) * 100 if total_all > 0 else 0.0
+    c1, c2 = st.columns(2)
 
-        st.metric("Tiket ESS (Self-Service)", f"{total_ess_tickets:,}", f"{ess_percentage:.1f}%")
-    else:
-        st.warning("Tidak ada data channel untuk dianalisis.")
-
-    st.subheader("📊 Distribusi Channel")
-    
-    tab_all, tab_inc, tab_req = st.tabs(["Semua Tiket (Combined)", "Incident Only", "Request Only"])
-
-    with tab_all:
+    with c1:
+        st.subheader("Analisis Self-Service (ESS)")
         if not df_combined_channel.empty:
-            channel_summary = df_combined_channel['Channel'].value_counts().reset_index()
-            channel_summary.columns = ['Channel', 'Count']
-            
-            fig_channel_all = px.pie(
-                channel_summary,
-                names='Channel',
-                values='Count',
-                title='Distribusi Semua Tiket berdasarkan Channel',
-                hole=0.4
-            )
-            fig_channel_all.update_traces(textinfo='percent+label')
-            st.plotly_chart(fig_channel_all, use_container_width=True)
+            ess_keywords = ['ess', 'self-service', 'self service']
+            is_ess = df_combined_channel['Channel'].str.lower().isin(ess_keywords)
+            total_ess_tickets = int(is_ess.sum())
+            ess_percentage = (total_ess_tickets / total_all) * 100 if total_all > 0 else 0.0
+
+            st.metric("Tiket ESS (Self-Service)", f"{total_ess_tickets:,}", f"{ess_percentage:.1f}%")
         else:
-            st.warning("Tidak ada data channel untuk ditampilkan.")
+            st.warning("Tidak ada data channel untuk dianalisis.")
 
-    with tab_inc:
-        if col_inc and not df_inc_all.empty:
-            inc_channel_summary = df_inc_all[col_inc].fillna('Unknown').value_counts().reset_index()
-            inc_channel_summary.columns = ['Channel', 'Count']
-            
-            fig_channel_inc = px.pie(
-                inc_channel_summary,
-                names='Channel',
-                values='Count',
-                title='Distribusi Tiket Incident berdasarkan Channel',
-                hole=0.4
-            )
-            fig_channel_inc.update_traces(textinfo='percent+label')
-            st.plotly_chart(fig_channel_inc, use_container_width=True)
+        st.subheader("Top 3 Service Offering dengan Max Breach Terbesar")
+        
+        unique_months = sorted(df_combined_full['Month'].dropna().unique().tolist())
+        time_filter_options = ["All"] + unique_months
+        
+        time_filter_selection = st.radio(
+            "Pilih periode waktu:", 
+            time_filter_options, 
+            horizontal=True, 
+            key="time_period_filter_summary"
+        )
+
+        if time_filter_selection == "All":
+            inc_df_slice = df_inc_all
+            req_df_slice = df_req_all
         else:
-            st.info("Tidak ada data channel untuk Incident.")
+            inc_df_slice = df_inc_all[df_inc_all['Month'] == time_filter_selection]
+            req_df_slice = df_req_all[df_req_all['Month'] == time_filter_selection]
 
-    with tab_req:
-        if col_req and not df_req_all.empty:
-            req_channel_summary = df_req_all[col_req].fillna('Unknown').value_counts().reset_index()
-            req_channel_summary.columns = ['Channel', 'Count']
-            
-            fig_channel_req = px.pie(
-                req_channel_summary,
-                names='Channel',
-                values='Count',
-                title='Distribusi Tiket Request berdasarkan Channel',
-                hole=0.4
-            )
-            fig_channel_req.update_traces(textinfo='percent+label')
-            st.plotly_chart(fig_channel_req, use_container_width=True)
+        df_combined_full_slice = pd.concat([inc_df_slice, req_df_slice], ignore_index=True)
+        
+        possible_service_cols = ['Service offering', 'Service Offering', 'ServiceOffering']
+        service_col = find_column(df_combined_full_slice.columns, possible_service_cols)
+        
+        if not service_col:
+            st.error("Kolom 'Service Offering' tidak ditemukan.")
+        elif 'Time Breach' not in df_combined_full_slice.columns:
+            st.error("Kolom 'Time Breach' gagal dihitung.")
+        elif df_combined_full_slice.empty or df_combined_full_slice['Time Breach'].isna().all():
+            st.warning("Tidak ada data breach untuk dianalisis.")
         else:
-            st.info("Tidak ada data channel untuk Request.")
-
-    st.subheader("📉 Performa SLA dari Waktu ke Waktu")
-
-    inc_sla_monthly = df_inc_all.groupby('Month').apply(get_sla_summary)
-    req_sla_monthly = df_req_all.groupby('Month').apply(get_sla_summary)
-
-    data_points = []
-    
-    for month, stats in inc_sla_monthly.items():
-        if stats['total_closed'] > 0:
-            data_points.append({
-                'Month': month, 
-                'Type': 'Incident', 
-                'SLA (%)': stats['percent'], 
-                'Achieved': stats['achieved'],         
-                'Total Closed': stats['total_closed']  
-            })
+            sla_service_agg = df_combined_full_slice.groupby(service_col).agg(
+                Max_Time_Breach=('Time Breach', 'max'),
+                Total_Tiket=(service_col, 'size'), 
+                Tiket_Breach=('SLA', lambda x: (x == 0).sum())
+            ).reset_index()
             
-    for month, stats in req_sla_monthly.items():
-        if stats['total_closed'] > 0:
-            data_points.append({
-                'Month': month, 
-                'Type': 'Request', 
-                'SLA (%)': stats['percent'],
-                'Achieved': stats['achieved'],         
-                'Total Closed': stats['total_closed']  
-            })
+            sla_service_agg['Max_Time_Breach'] = sla_service_agg['Max_Time_Breach'].fillna(0)
+            sla_service_agg = sla_service_agg.sort_values(by='Max_Time_Breach', ascending=False)
+            sla_service_agg['No'] = sla_service_agg['Max_Time_Breach'].rank(method='dense', ascending=False).astype(int)
+            
+            bottom3_sla = sla_service_agg[sla_service_agg['No'] <= 3].sort_values(by=['No', service_col])
+            bottom3_sla = bottom3_sla[['No', service_col, 'Max_Time_Breach', 'Total_Tiket', 'Tiket_Breach']]
+            bottom3_sla.columns = ['No', 'Service Offering', 'Max Time Breach', '∑Total Tiket', '∑ Tiket Breach']
 
-    if data_points:
-        chart_df = pd.DataFrame(data_points).sort_values(by='Month')
-        
-        chart_df['Label'] = (
-            chart_df['SLA (%)'].map('{:.1f}'.format) + "% (" + 
-            chart_df['Achieved'].astype(str) + "/" + 
-            chart_df['Total Closed'].astype(str) + ")"
-        )
-        
-        chart_df['Month_Display'] = chart_df['Month'].str.split('(').str[1].str.replace(')', '') + " " + chart_df['Month'].str.split('-').str[0]
-        chart_df = chart_df.sort_values(by='Month')
-        month_display_order = chart_df.drop_duplicates(subset=['Month']).set_index('Month').loc[month_order]['Month_Display'].tolist()
+            html_bottom = '<table class="manual-sla-table"><thead><tr>'
+            html_bottom += "<th>No</th>"
+            html_bottom += "<th>Service Offering</th>"
+            html_bottom += "<th>Max Time Breach</th>"
+            html_bottom += "<th>∑Total Tiket</th>"
+            html_bottom += "<th>∑ Tiket Breach</th>"
+            html_bottom += "</tr></thead><tbody>"
 
-        fig_line = px.line(
-            chart_df,
-            x='Month_Display',
-            y='SLA (%)',
-            color='Type',        
-            markers=True,        
-            text='Label',  
-            hover_data=['Achieved', 'Total Closed'], 
-            title='Pencapaian SLA (%) vs. Bulan'
-        )
+            if bottom3_sla.empty:
+                html_bottom += "<tr class='row-data'><td colspan='5' style='text-align:center;'>Tidak ada data breach untuk ditampilkan.</td></tr>"
+            else:
+                for _, row in bottom3_sla.iterrows():
+                    html_bottom += "<tr class='row-data'>"
+                    html_bottom += f"<td class='col-no'>{row['No']}</td>"
+                    html_bottom += f"<td><b>{row['Service Offering']}</b></td>"
+                    html_bottom += f"<td class='text-center'>{format_hari_jam_menit(row['Max Time Breach'])}</td>"
+                    html_bottom += f"<td class='text-center'>{row['∑Total Tiket']}</td>"
+                    html_bottom += f"<td class='text-center'>{row['∑ Tiket Breach']}</td>"
+                    html_bottom += "</tr>"
+
+            html_bottom += "</tbody></table>"
+            st.markdown(html_bottom, unsafe_allow_html=True)
+
+    with c2:
+        st.subheader("Distribusi Channel")
         
-        fig_line.update_traces(textposition='top center')
-        
-        fig_line.update_layout(
-            yaxis_title="SLA Achievement (%)",
-            xaxis_title="Bulan",
-            yaxis_range=[0, 115], 
-            xaxis={'categoryorder':'array', 'categoryarray': month_display_order} 
-        )
-        st.plotly_chart(fig_line, use_container_width=True)
-    else:
-        st.error("Grafik performa SLA tidak dapat dibuat (data kosong/tidak ada closed).")
+        tab_all, tab_inc, tab_req = st.tabs(["Semua Tiket", "Incident", "Request"])
+
+        with tab_all:
+            if not df_combined_channel.empty:
+                channel_summary = df_combined_channel['Channel'].value_counts().reset_index()
+                channel_summary.columns = ['Channel', 'Count']
+                
+                fig_channel_all = px.pie(
+                    channel_summary,
+                    names='Channel',
+                    values='Count',
+                    title='Semua Tiket',
+                    hole=0.4
+                )
+                fig_channel_all.update_traces(textinfo='percent+label')
+                fig_channel_all.update_layout(margin=dict(t=30, b=0, l=0, r=0))
+                st.plotly_chart(fig_channel_all, use_container_width=True)
+            else:
+                st.warning("Tidak ada data channel.")
+
+        with tab_inc:
+            if col_inc and not df_inc_all.empty:
+                inc_channel_summary = df_inc_all[col_inc].fillna('Unknown').value_counts().reset_index()
+                inc_channel_summary.columns = ['Channel', 'Count']
+                
+                fig_channel_inc = px.pie(
+                    inc_channel_summary,
+                    names='Channel',
+                    values='Count',
+                    title='Incident',
+                    hole=0.4
+                )
+                fig_channel_inc.update_traces(textinfo='percent+label')
+                fig_channel_inc.update_layout(margin=dict(t=30, b=0, l=0, r=0))
+                st.plotly_chart(fig_channel_inc, use_container_width=True)
+            else:
+                st.info("Tidak ada data Incident.")
+
+        with tab_req:
+            if col_req and not df_req_all.empty:
+                req_channel_summary = df_req_all[col_req].fillna('Unknown').value_counts().reset_index()
+                req_channel_summary.columns = ['Channel', 'Count']
+                
+                fig_channel_req = px.pie(
+                    req_channel_summary,
+                    names='Channel',
+                    values='Count',
+                    title='Request',
+                    hole=0.4
+                )
+                fig_channel_req.update_traces(textinfo='percent+label')
+                fig_channel_req.update_layout(margin=dict(t=30, b=0, l=0, r=0))
+                st.plotly_chart(fig_channel_req, use_container_width=True)
+            else:
+                st.info("Tidak ada data Request.")
 
     st.divider()
-    st.subheader("🔎 Analisis Spesifik Berdasarkan Periode")
     
-    unique_months = sorted(df_combined_full['Month'].dropna().unique().tolist())
-    time_filter_options = ["All"] + unique_months
-    
-    time_filter_selection = st.radio(
-        "Pilih Periode Waktu untuk Analisis di Bawah:", 
-        time_filter_options, 
-        horizontal=True, 
-        key="time_period_filter_summary"
-    )
-
-    if time_filter_selection == "All":
-        inc_df_slice = df_inc_all
-        req_df_slice = df_req_all
-    else:
-        inc_df_slice = df_inc_all[df_inc_all['Month'] == time_filter_selection]
-        req_df_slice = df_req_all[df_req_all['Month'] == time_filter_selection]
-
-    df_combined_full_slice = pd.concat([inc_df_slice, req_df_slice], ignore_index=True)
-
-    st.subheader("🔥 Top 3 Service Offering dengan Max Breach Terbesar")
-    st.caption(f"Menampilkan data untuk: **{time_filter_selection}**")
-    
-    possible_service_cols = ['Service offering', 'Service Offering', 'ServiceOffering']
-    service_col = find_column(df_combined_full_slice.columns, possible_service_cols)
-    
-    if not service_col:
-        st.error("Kolom 'Service Offering' tidak ditemukan.")
-    elif 'Time Breach' not in df_combined_full_slice.columns:
-        st.error("Kolom 'Time Breach' gagal dihitung.")
-    elif df_combined_full_slice.empty or df_combined_full_slice['Time Breach'].isna().all():
-        st.warning("Tidak ada data breach untuk dianalisis.")
-    else:
-        sla_service_agg = df_combined_full_slice.groupby(service_col).agg(
-            Max_Time_Breach=('Time Breach', 'max'),
-            Total_Tiket=(service_col, 'size'), 
-            Tiket_Breach=('SLA', lambda x: (x == 0).sum())
-        ).reset_index()
-        
-        sla_service_agg['Max_Time_Breach'] = sla_service_agg['Max_Time_Breach'].fillna(0)
-        sla_service_agg = sla_service_agg.sort_values(by='Max_Time_Breach', ascending=False)
-        sla_service_agg['No'] = sla_service_agg['Max_Time_Breach'].rank(method='dense', ascending=False).astype(int)
-        
-        bottom3_sla = sla_service_agg[sla_service_agg['No'] <= 3].sort_values(by=['No', service_col])
-        bottom3_sla = bottom3_sla[['No', service_col, 'Max_Time_Breach', 'Total_Tiket', 'Tiket_Breach']]
-        bottom3_sla.columns = ['No', 'Service Offering', 'Max Time Breach', '∑Total Tiket', '∑ Tiket Breach']
-
-        html_bottom = css_tabel + '<table class="manual-sla-table"><thead><tr>'
-        html_bottom += "<th>No</th>"
-        html_bottom += "<th>Service Offering</th>"
-        html_bottom += "<th>Max Time Breach</th>"
-        html_bottom += "<th>∑Total Tiket</th>"
-        html_bottom += "<th>∑ Tiket Breach</th>"
-        html_bottom += "</tr></thead><tbody>"
-
-        if bottom3_sla.empty:
-            html_bottom += "<tr><td colspan='5' style='text-align:center;'>Tidak ada data breach untuk ditampilkan.</td></tr>"
-        else:
-            for _, row in bottom3_sla.iterrows():
-                html_bottom += "<tr>"
-                html_bottom += f"<td>{row['No']}</td>"
-                html_bottom += f"<td>{row['Service Offering']}</td>"
-                html_bottom += f"<td>{format_hari_jam_menit(row['Max Time Breach'])}</td>"
-                html_bottom += f"<td>{row['∑Total Tiket']}</td>"
-                html_bottom += f"<td>{row['∑ Tiket Breach']}</td>"
-                html_bottom += "</tr>"
-
-        html_bottom += "</tbody></table>"
-        st.markdown(html_bottom, unsafe_allow_html=True)
-    
-    st.subheader("🔎 Occurrence Analysis by Category")
-    st.caption(f"Menampilkan data untuk: **{time_filter_selection}**")
+    st.subheader("Occurrence Analysis by Category")
     
     view_mode = st.radio(
         "Pilih Tampilan Jumlah Data:",
-        ["Top 3 Only", "Show All Data"],
+        ["Top 3", "All"],
         horizontal=True,
         key="view_mode_selector"
     )
     
-    limit_val = 3 if view_mode == "Top 3 Only" else None
+    limit_val = 3 if view_mode == "Top 3" else None
     
     possible_kategori_cols = ['Kategori', 'Category', 'Item', 'Tipe']
     kategori_col = find_column(df_inc_all.columns, possible_kategori_cols)
@@ -693,7 +674,7 @@ def run():
     elif not service_col:
         st.error("Kolom 'Service Offering' tidak ditemukan.")
     elif inc_df_slice.empty:
-         st.warning(f"Tidak ada data Insiden untuk periode: {time_filter_selection}")
+            st.warning(f"Tidak ada data Insiden untuk periode: {time_filter_selection}")
     else:
         html_incident = display_occurrence_table(
             df_slice=inc_df_slice, 
@@ -702,7 +683,7 @@ def run():
             static_type=None,
             limit=limit_val 
         )
-        st.markdown(css_tabel + html_incident, unsafe_allow_html=True)
+        st.markdown(html_incident, unsafe_allow_html=True)
 
     st.markdown("<h4>Request Analysis</h4>", unsafe_allow_html=True)
     if not item_col:
@@ -712,15 +693,14 @@ def run():
     else:
         html_request = display_occurrence_table(
             df_slice=req_df_slice,
-            data_col=item_col,      
+            data_col=item_col,       
             group_by_col=item_col,   
             static_type="Request",
             limit=limit_val 
         )
-        st.markdown(css_tabel + html_request, unsafe_allow_html=True)
+        st.markdown(html_request, unsafe_allow_html=True)
 
-    st.subheader("📊 Solved vs Active/Pending Status")
-    st.caption(f"Menampilkan status untuk periode: **{time_filter_selection}**")
+    st.subheader("Solved vs Active/Pending Status")
 
     if not kategori_col:
         st.error("Kolom 'Kategori' tidak ditemukan.")
@@ -760,7 +740,8 @@ def run():
         df_status = pd.DataFrame(final_table_data, index=["Solved", "Active/Pending"])
         
         df_status = df_status.reindex(columns=all_table_cols, fill_value=0)
-        st.dataframe(df_status, use_container_width=True)
+        
+        st.markdown(make_simple_html_table(df_status), unsafe_allow_html=True)
 
 if __name__ == "__main__":
     run()

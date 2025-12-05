@@ -150,7 +150,6 @@ def run():
         unsafe_allow_html=True
     )
 
-    st.write("Upload file Excel Insiden. Sistem akan menambahkan kolom: `Business criticality-Severity`, `Waktu SLA`, `Target Selesai Baru`, `SLA`, dan `Time Breach`. **Perhitungan menggunakan Waktu Kalender (24/7).**")
     uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx", "xls"], key="incident_uploader")
     if not uploaded_file:
         st.info("Silakan upload file Excel terlebih dahulu.")
