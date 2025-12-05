@@ -277,7 +277,7 @@ def run():
 
                         with col_right:
                             # TOP 4 CONTACT TYPE
-                            st.subheader("4. Top 4 Contact Type Analysis")
+                            st.subheader("Top 4 Contact Type Analysis")
                             if col_contact in df_final.columns:
                                 top_contact = df_final[col_contact].value_counts().head(4).reset_index()
                                 top_contact.columns = ['Type', 'Count']
