@@ -63,9 +63,81 @@ def calculate_time_breach(row, date_created_col, date_resolved_col):
         return breach.total_seconds() / (3600 * 24) 
     else:
         return pd.NA
-    
+
+def make_styled_table_simple(df):
+    """
+    Mengubah DataFrame menjadi HTML string dengan class CSS 'manual-sla-table'.
+    Asumsi: Kolom pertama adalah 'No' atau Rank yang akan diberi warna background abu gelap.
+    """
+    html = '<table class="manual-sla-table"><thead><tr>'
+    for col in df.columns:
+        html += f"<th>{col}</th>"
+    html += "</tr></thead><tbody>"
+
+    for _, row in df.iterrows():
+        html += "<tr class='row-data'>"
+        for idx, val in enumerate(row):
+            if idx == 0:
+                html += f"<td class='col-no'>{val}</td>"
+            elif isinstance(val, (int, np.integer)):
+                html += f"<td style='text-align:center;'>{val}</td>"
+            else:
+                html += f"<td>{val}</td>"
+        html += "</tr>"
+    html += "</tbody></table>"
+    return html
+
 def run():
     st.set_page_config(layout="wide") 
+
+    css_tabel = """
+    <style>
+        .manual-sla-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: sans-serif;
+            font-size: 13px;
+        }
+        /* Header Blue Style */
+        .manual-sla-table th {
+            background-color: #305496; /* Dark Blue from screenshot */
+            color: white;
+            padding: 8px 10px;
+            border: 1px solid white; /* White borders */
+            text-align: center;
+            font-weight: bold;
+        }
+        /* General Cell Style */
+        .manual-sla-table td {
+            padding: 6px 10px;
+            border: 1px solid white; /* White grid lines */
+            vertical-align: middle;
+            color: black;
+        }
+        /* Grouping Column (No) - Gray Background */
+        .col-no {
+            background-color: #D9D9D9; 
+            font-weight: bold;
+            text-align: center;
+            width: 50px; /* Lebar fix untuk kolom No */
+        }
+        /* Data Row - Light Gray Background */
+        .row-data {
+            background-color: #E9E9E9; 
+        }
+        /* SLA Column - Styled like Grouping column if desired, or bold */
+        .col-sla {
+            background-color: #D9D9D9; 
+            font-weight: bold;
+            text-align: center;
+        }
+        /* Center align numbers */
+        .text-center {
+            text-align: center;
+        }
+    </style>
+    """
+    st.markdown(css_tabel, unsafe_allow_html=True)
 
     st.markdown(
         """
@@ -146,14 +218,6 @@ def run():
         '4 - Low - 3 - Low': 48.0
     }
 
-    st.subheader("✨ SLA Mapping (hours)")
-    mapping_df = pd.DataFrame(list(sla_mapping_hours.items()), columns=["Business criticality-Severity", "Target SLA (jam)"])
-    st.markdown(
-        mapping_df.to_html(index=False, classes='table table-sm', justify='left')
-        .replace('<td>', '<td style="text-align:left;">'),
-        unsafe_allow_html=True
-    )
-
     df['_bc_raw'] = df[bc_col].astype(str).fillna('').str.strip()
     df['_sev_raw'] = df[sev_col].astype(str).fillna('').str.strip()
     df['Business criticality-Severity'] = (df['_bc_raw'] + " - " + df['_sev_raw']).apply(normalize_label)
@@ -188,8 +252,6 @@ def run():
         lambda r: calculate_time_breach(r, date_created_col, date_resolved_col), axis=1
     )
 
-    st.dataframe(df)
-
     sla_tercapai = int((df['SLA'] == 1).sum())
     sla_tidak_tercapai = int((df['SLA'] == 0).sum())
     if date_resolved_col:
@@ -198,12 +260,11 @@ def run():
         sla_open = len(df)
     total_semua = len(df)
 
-    st.subheader("✨ Rekapitulasi SLA")
+    st.subheader("Rekapitulasi SLA")
     
     col_rekap_kiri, col_rekap_kanan = st.columns([1, 1])
 
     with col_rekap_kiri:
-        st.markdown("### Ringkasan")
         st.write(f"- 🏆 SLA tercapai: **{sla_tercapai}**")
         st.write(f"- 🚨 SLA tidak tercapai: **{sla_tidak_tercapai}**")
         st.write(f"- ⏳ Tiket masih open: **{sla_open}**")
@@ -230,14 +291,16 @@ def run():
 
     st.divider()
 
-    st.subheader("✨ Analisis Kombinasi Business criticality-Severity")
+    st.subheader("Analisis Kombinasi Business criticality-Severity")
     if 'Business criticality-Severity' in df.columns:
         top5 = df['Business criticality-Severity'].value_counts().reset_index()
         top5.columns = ['Business criticality-Severity', 'Jumlah']
-        top5.index = top5.index + 1
+        
+        top5.insert(0, 'No', range(1, len(top5) + 1))
         top5 = top5.head(5)
+        
         st.markdown("**Top 5 Kombinasi Business criticality-Severity:**")
-        st.markdown(top5.to_html(index=True, justify='left').replace('<td>', '<td style="text-align:left;">'), unsafe_allow_html=True)
+        st.markdown(make_styled_table_simple(top5), unsafe_allow_html=True)
 
     possible_contacttype_cols = ['Channel', 'Contact Type', 'ContactType', 'Contact type']
     contact_col = next((c for c in possible_contacttype_cols if c in df.columns), None)
@@ -245,13 +308,15 @@ def run():
     if contact_col:
         contact_summary = df[contact_col].value_counts(dropna=False).reset_index()
         contact_summary.columns = ['Channel', 'Jumlah']
-        contact_summary.index = contact_summary.index + 1
-        st.subheader("✨ Analisis Channel")
+        
+        contact_summary.insert(0, 'No', range(1, len(contact_summary) + 1))
+
+        st.subheader("Analisis Channel")
         
         col_channel_1, col_channel_2 = st.columns([1, 1])
         with col_channel_1:
             st.markdown("**Rekapitulasi Semua Channel**")
-            st.markdown(contact_summary.to_html(index=True, justify='left').replace('<td>', '<td style="text-align:left;">'), unsafe_allow_html=True)
+            st.markdown(make_styled_table_simple(contact_summary), unsafe_allow_html=True)
         with col_channel_2:
             fig_contact = px.pie(contact_summary, names='Channel', values='Jumlah', hole=0.4, title='Proporsi Channel')
             fig_contact.update_layout(margin=dict(t=40, b=0, l=0, r=0))
@@ -260,32 +325,8 @@ def run():
     possible_service_cols = ['Service offering', 'Service Offering', 'ServiceOffering', 'Service offering']
     service_col = next((c for c in possible_service_cols if c in df.columns), None)
 
-    css_tabel = """
-    <style>
-        .manual-sla-table {
-            width: 100%; /* FIT TO LAYOUT */
-            border-collapse: collapse;
-            text-align: left;
-            font-size: 13px;
-        }
-        .manual-sla-table th, .manual-sla-table td {
-            padding: 6px 10px;
-            border-bottom: 1px solid #EEEEEE;
-            vertical-align: middle;
-            white-space: nowrap;
-        }
-        .manual-sla-table th {
-            background-color: #F0F2F6;
-            font-weight: 600;
-        }
-        .manual-sla-table tr:hover {
-            background-color: #F5F5F5;
-        }
-    </style>
-    """
-
     if service_col:
-        st.subheader("✨ Analisis Service Offering")
+        st.subheader("Analisis Service Offering")
         service_summary = (
             df[service_col]
             .dropna()
@@ -296,14 +337,15 @@ def run():
             .reset_index()
         )
         service_summary.columns = ['Service Offering', 'Jumlah']
-        service_summary.index = service_summary.index + 1
+        
+        service_summary.insert(0, 'No', range(1, len(service_summary) + 1))
         top5_service = service_summary.head(5)
 
         col_table, col_chart = st.columns([1, 1]) 
 
         with col_table:
             st.markdown("**Top 5 Service Offering dengan tiket terbanyak:**")
-            st.markdown(top5_service.to_html(index=True, justify='left').replace('<td>', '<td style="text-align:left;">'), unsafe_allow_html=True)
+            st.markdown(make_styled_table_simple(top5_service), unsafe_allow_html=True)
 
         with col_chart:
             fig_service = px.bar(
@@ -368,27 +410,27 @@ def run():
         bottom3_sla = sla_service_agg[sla_service_agg['No_Bottom'] <= 3].sort_values(by=['No_Bottom', service_col])
         bottom3_sla = bottom3_sla[['No_Bottom', service_col, 'Jumlah_Tiket', 'Total Waktu Breach (jam)', 'SLA_Breach_%']] 
         bottom3_sla.columns = ['No', 'Service Offering', 'Σ Tiket (Closed)', 'Total Waktu Breach (jam)', 'SLA (%)']
-        
-        html_top = css_tabel + '<table class="manual-sla-table"><thead><tr>'
-        html_top += "<th>No</th><th>Service Offering</th><th>Σ Tiket</th><th>Total Breach (jam)</th><th>SLA (%)</th></tr></thead><tbody>"
+
+        html_top = '<table class="manual-sla-table"><thead><tr>'
+        html_top += "<th>No</th><th>Service Offering</th><th>Jmlh Tiket</th><th>Total Waktu Breach</th><th>SLA</th></tr></thead><tbody>"
         for no in sorted(top3_sla['No'].unique()):
             group = top3_sla[top3_sla['No'] == no]
             rowspan = len(group)
             for i, (_, row) in enumerate(group.iterrows()):
-                html_top += "<tr>"
-                if i == 0: html_top += f"<td rowspan='{rowspan}'>{no}</td>"
-                html_top += f"<td>{row['Service Offering']}</td><td>{row['Σ Tiket (Closed)']}</td><td>{format_hari_jam_menit(row['Total Waktu Breach (jam)'])}</td><td>{row['SLA (%)']}%</td></tr>"
+                html_top += "<tr class='row-data'>"
+                if i == 0: html_top += f"<td rowspan='{rowspan}' class='col-no'>{no}</td>"
+                html_top += f"<td><b>{row['Service Offering']}</b></td><td class='text-center'>{row['Σ Tiket (Closed)']}</td><td class='text-center'>{format_hari_jam_menit(row['Total Waktu Breach (jam)'])}</td><td class='col-sla'>{row['SLA (%)']}%</td></tr>"
         html_top += "</tbody></table>"
 
-        html_bottom = css_tabel + '<table class="manual-sla-table"><thead><tr>'
-        html_bottom += "<th>No</th><th>Service Offering</th><th>Σ Tiket</th><th>Total Breach (jam)</th><th>SLA (%)</th></tr></thead><tbody>"
+        html_bottom = '<table class="manual-sla-table"><thead><tr>'
+        html_bottom += "<th>No</th><th>Service Offering</th><th>Jmlh Tiket</th><th>Total Waktu Breach</th><th>SLA</th></tr></thead><tbody>"
         for no in sorted(bottom3_sla['No'].unique()):
             group = bottom3_sla[bottom3_sla['No'] == no]
             rowspan = len(group)
             for i, (_, row) in enumerate(group.iterrows()):
-                html_bottom += "<tr>"
-                if i == 0: html_bottom += f"<td rowspan='{rowspan}'>{no}</td>"
-                html_bottom += f"<td>{row['Service Offering']}</td><td>{row['Σ Tiket (Closed)']}</td><td>{format_jam_menit_saja(row['Total Waktu Breach (jam)'])}</td><td>-{row['SLA (%)']}%</td></tr>" 
+                html_bottom += "<tr class='row-data'>"
+                if i == 0: html_bottom += f"<td rowspan='{rowspan}' class='col-no'>{no}</td>"
+                html_bottom += f"<td><b>{row['Service Offering']}</b></td><td class='text-center'>{row['Σ Tiket (Closed)']}</td><td class='text-center'>{format_jam_menit_saja(row['Total Waktu Breach (jam)'])}</td><td class='col-sla'>-{row['SLA (%)']}%</td></tr>" 
         html_bottom += "</tbody></table>"
 
         st.divider()
@@ -455,26 +497,26 @@ def run():
             bottom3_max_breach['No'] = bottom3_max_breach['Time Breach'].rank(method='dense', ascending=False).astype(int)
             bottom3_max_breach = bottom3_max_breach[bottom3_max_breach['No'] <= 3]
 
-            html_top_max = css_tabel + '<table class="manual-sla-table"><thead><tr>'
-            html_top_max += "<th>No</th><th>Service Offering</th><th>Waktu Breach</th><th>SLA (%)</th></tr></thead><tbody>"
+            html_top_max = '<table class="manual-sla-table"><thead><tr>'
+            html_top_max += "<th>No</th><th>Service Offering</th><th>Waktu Breach</th><th>SLA</th></tr></thead><tbody>"
             for no in sorted(top3_min_max_breach['No'].unique()):
                 group = top3_min_max_breach[top3_min_max_breach['No'] == no]
                 rowspan = len(group)
                 for i, (_, row) in enumerate(group.iterrows()):
-                    html_top_max += "<tr>"
-                    if i == 0: html_top_max += f"<td rowspan='{rowspan}'>{no}</td>"
-                    html_top_max += f"<td>{row[service_col]}</td><td>{format_hari_jam_menit(row['Time Breach (jam)'])}</td><td>{row['SLA Service (%)']}%</td></tr>"
+                    html_top_max += "<tr class='row-data'>"
+                    if i == 0: html_top_max += f"<td rowspan='{rowspan}' class='col-no'>{no}</td>"
+                    html_top_max += f"<td><b>{row[service_col]}</b></td><td class='text-center'>{format_hari_jam_menit(row['Time Breach (jam)'])}</td><td class='col-sla'>{row['SLA Service (%)']}%</td></tr>"
             html_top_max += "</tbody></table>"
 
-            html_bottom_max = css_tabel + '<table class="manual-sla-table"><thead><tr>'
-            html_bottom_max += "<th>No</th><th>Service Offering</th><th>Waktu Breach</th><th>No Tiket</th><th>SLA (%)</th></tr></thead><tbody>"
+            html_bottom_max = '<table class="manual-sla-table"><thead><tr>'
+            html_bottom_max += "<th>No</th><th>Service Offering</th><th>Waktu Breach</th><th>No Tiket</th><th>SLA</th></tr></thead><tbody>"
             for no in sorted(bottom3_max_breach['No'].unique()):
                 group = bottom3_max_breach[bottom3_max_breach['No'] == no]
                 rowspan = len(group)
                 for i, (_, row) in enumerate(group.iterrows()):
-                    html_bottom_max += "<tr>"
-                    if i == 0: html_bottom_max += f"<td rowspan='{rowspan}'>{no}</td>"
-                    html_bottom_max += f"<td>{row[service_col]}</td><td>{format_hari_jam_menit(row['Time Breach (jam)'])}</td><td>{row[tiket_col]}</td><td>{row['SLA Service (%)']}%</td></tr>"
+                    html_bottom_max += "<tr class='row-data'>"
+                    if i == 0: html_bottom_max += f"<td rowspan='{rowspan}' class='col-no'>{no}</td>"
+                    html_bottom_max += f"<td><b>{row[service_col]}</b></td><td class='text-center'>{format_hari_jam_menit(row['Time Breach (jam)'])}</td><td class='text-center'>{row[tiket_col]}</td><td class='col-sla'>{row['SLA Service (%)']}%</td></tr>"
             html_bottom_max += "</tbody></table>"
 
             st.divider()
@@ -519,21 +561,10 @@ def run():
         return "Unknown"
 
     df["Status SLA"] = df.apply(sla_status, axis=1)
-    st.subheader("🔥 Hasil Kalkulasi")
-    tiket_col = next((c for c in ['No. Tiket', 'Ticket No', 'No Ticket', 'No Tiket', 'Ticket'] if c in df.columns), None)
-    show_cols = [
-        tiket_col,
-        date_created_col,
-        date_resolved_col,
-        'Business criticality-Severity',
-        'Waktu SLA',
-        'Target Selesai Baru',
-        'SLA',
-        'Time Breach',
-        'Status SLA'
-    ]
-    show_cols = [col for col in show_cols if col in df.columns or col in ['SLA', 'Status SLA', 'Waktu SLA', 'Target Selesai Baru', 'Time Breach', 'Business criticality-Severity']]
-    st.dataframe(df[show_cols].head(50))
+
+    st.divider()
+    st.subheader("Hasil Kalkulasi")
+    st.dataframe(df)
 
     excel_bytes = to_excel(df)
     st.download_button(
