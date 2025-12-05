@@ -5,7 +5,6 @@ import plotly.express as px
 from datetime import datetime, time, timedelta
 import os
 
-# Konfigurasi Halaman
 st.set_page_config(page_title="SLA Analytics Dashboard", layout="wide")
 
 def run():
@@ -15,7 +14,7 @@ def run():
     """)
     st.markdown("---")
     
-    # --- DEFINISI LOKASI REGIONAL 3 ---
+    #LOKASI REGIONAL 3
     regional_3_locations = [
         "P. Lembar", "Regional 3", "P. Batulicin", "R. Jawa", "Terminal Celukan Bawang",
         "Sub Regional BBN", "P. Tg. Emas", "P. Bumiharjo", "Tanjung Perak", "R. Bali Nusra",
@@ -40,7 +39,6 @@ def run():
     st.sidebar.header("📂 Upload File")
     uploaded_req = st.sidebar.file_uploader("File Request Item (.xlsx)", type=["xlsx"])
     
-    # --- LOGIKA OTOMATIS BACA FILE MAPPING ---
     default_sla_path = os.path.join(os.path.dirname(__file__), "data_sc_req_mapping.xlsx")
 
     if os.path.exists(default_sla_path):
@@ -49,7 +47,6 @@ def run():
         st.sidebar.warning("⚠️ File mapping default tidak ditemukan.")
         uploaded_sla = st.sidebar.file_uploader("Upload File Mapping SLA (.xlsx)", type=["xlsx"])
 
-    # --- FUNGSI BANTUAN ---
     def parse_sla_duration(val):
         if pd.isna(val) or val == "": return pd.Timedelta(0)
         if isinstance(val, time): return timedelta(hours=val.hour, minutes=val.minute, seconds=val.second)
@@ -80,7 +77,6 @@ def run():
         try:
             df_req = pd.read_excel(uploaded_req)
             
-            # --- 1. DETEKSI KOLOM ---
             col_loc = find_col(df_req, ["Lokasi", "Location"]) or "Lokasi Pelapor"
             col_judul = find_col(df_req, ["Judul", "Short"]) or "Judul Permasalahan"
             col_bc = find_col(df_req, ["Business", "Criticality"]) or "Businesscriticality"
@@ -92,11 +88,11 @@ def run():
             col_item = find_col(df_req, ["Item"]) or "Item"
             col_service = find_col(df_req, ["Service", "Offering"]) or "Service offering"
 
-            # Bersihkan String Dasar
+            #bersih data
             if col_loc in df_req.columns: df_req[col_loc] = clean_string_col(df_req[col_loc])
             if col_judul in df_req.columns: df_req[col_judul] = clean_string_col(df_req[col_judul])
             
-            # --- AUTO FILL DEFAULT ---
+            #auto fill
             if col_bc in df_req.columns:
                 df_req[col_bc] = clean_string_col(df_req[col_bc])
                 df_req[col_bc] = df_req[col_bc].replace(['', 'nan', 'None'], '3-Medium')
@@ -105,7 +101,7 @@ def run():
                 df_req[col_sev] = clean_string_col(df_req[col_sev])
                 df_req[col_sev] = df_req[col_sev].replace(['', 'nan', 'None'], '3-Low')
 
-            # --- 2. FILTER REGIONAL ---
+            #filter regional 3
             if col_loc in df_req.columns:
                 filter_option = st.radio("Pilih Data:", ("All Data", "Regional 3 Only"), horizontal=True)
                 if filter_option == "Regional 3 Only":
@@ -118,14 +114,13 @@ def run():
                 st.error("Kolom Lokasi Pelapor tidak ditemukan.")
                 st.stop()
 
-            # --- 3. MAPPING SLA ---
+            #mapping sla
             if uploaded_sla is not None:
                 try:
                     map_item = pd.read_excel(uploaded_sla, sheet_name='Map_Item')
                     map_sev = pd.read_excel(uploaded_sla, sheet_name='Map_Severity')
                     map_dur = pd.read_excel(uploaded_sla, sheet_name='Map_Durasi')
 
-                    # Cleaning Mapping
                     for m in [map_item, map_sev, map_dur]:
                         m.columns = m.columns.str.strip()
 
@@ -134,20 +129,17 @@ def run():
                     map_sev['Clean_Key_Map'] = remove_all_spaces(map_sev[sev_map_col])
                     map_dur['ID SLA'] = clean_string_col(map_dur['ID SLA'])
 
-                    # --- LOGIKA GABUNG ---
                     df_main['Key_Clean_Req'] = df_main.apply(
                         lambda x: (x[col_bc].replace(" ", "") + x[col_sev].replace(" ", "")), axis=1
                     )
                     df_main['Businesscriticality-Severity'] = df_main[col_bc] + df_main[col_sev]
 
-                    # Merge
                     df_merged = pd.merge(df_main, map_item[['Judul Permasalahan', 'ID']], left_on=col_judul, right_on='Judul Permasalahan', how='left')
                     df_merged.rename(columns={'ID': 'ID_Item'}, inplace=True)
 
                     df_merged = pd.merge(df_merged, map_sev[['Clean_Key_Map', 'ID']], left_on='Key_Clean_Req', right_on='Clean_Key_Map', how='left')
                     df_merged.rename(columns={'ID': 'ID_Sev'}, inplace=True)
 
-                    # ID SLA Final
                     df_merged['ID_Item_Str'] = df_merged['ID_Item'].fillna('').astype(str).str.replace(r'\.0$', '', regex=True)
                     df_merged['ID_Sev_Str'] = df_merged['ID_Sev'].fillna('').astype(str).replace('nan', '')
                     
@@ -155,11 +147,10 @@ def run():
                         lambda x: x['ID_Item_Str'] + x['ID_Sev_Str'] if x['ID_Item_Str'] != "" and x['ID_Sev_Str'] != "" else None, axis=1
                     )
 
-                    # Get Durasi
                     df_final = pd.merge(df_merged, map_dur[['ID SLA', 'SLA']], left_on='ID SLA Final', right_on='ID SLA', how='left')
                     df_final.rename(columns={'SLA': 'Target SLA Raw'}, inplace=True)
 
-                    # --- 4. HITUNG & KONVERSI ---
+                    #hitung n konversi
                     df_final[col_dibuat] = pd.to_datetime(df_final[col_dibuat], errors='coerce')
                     if col_ditutup in df_final.columns:
                         df_final[col_ditutup] = pd.to_datetime(df_final[col_ditutup], errors='coerce')
@@ -171,7 +162,7 @@ def run():
                         lambda row: row[col_dibuat] + row['SLA_Timedelta'] if pd.notnull(row['SLA_Timedelta']) and row['SLA_Timedelta'] != pd.Timedelta(0) else pd.NaT, axis=1
                     )
 
-                    # Hitung Status SLA
+                    #hitung status SLA
                     def hitung_status(row):
                         if pd.isna(row['Target Selesai Hitung']): return ""
                         if col_ditutup not in row or pd.isna(row[col_ditutup]): return "WP"
@@ -179,7 +170,6 @@ def run():
 
                     df_final['SLA'] = df_final.apply(hitung_status, axis=1)
 
-                    # --- PREPARE DATA FOR DOWNLOAD ---
                     if col_target_asli in df_final.columns:
                         df_final.rename(columns={col_target_asli: "Target Selesai (Due Date Asli)"}, inplace=True)
                     df_final.rename(columns={'Target Selesai Hitung': 'Target Selesai'}, inplace=True)
@@ -200,44 +190,34 @@ def run():
                     available_cols = [c for c in final_cols if c in df_final.columns]
                     df_display = df_final[available_cols]
 
-                    # ==========================================
-                    # 📊 VISUALIZATION DASHBOARD SECTION
-                    # ==========================================
-                    
+                    #visualisasi
                     st.success("✅ Data berhasil diproses!")
                     
                     tab1, tab2 = st.tabs(["📊 Dashboard Visualisasi", "📄 Data Preview"])
 
                     with tab1:
-                        # --- 1. SLA RECAP (ANGKA & PERCENTAGE) ---
+                        #SLA recap
                         st.subheader("SLA Performance Recap")
                         
-                        # Hitung Count
                         sla_counts = df_final['SLA'].value_counts()
                         on_time = sla_counts.get(1, 0)
                         late = sla_counts.get(0, 0)
                         
-                        # Hitung Total Tiket (Untuk Card Paling Kanan)
                         total_tickets = len(df_final)
-                        
-                        # Hitung Total Calculated (Untuk Persentase)
                         total_calculated = on_time + late
                         
-                        # --- RUMUS EXCEL: =AE2064/AH2064 ---
                         if total_calculated > 0:
                             achievement_rate = (on_time / total_calculated) * 100
                         else:
                             achievement_rate = 0
                         
-                        # Metric Cards
                         c1, c2, c3, c4 = st.columns(4)
                         c1.metric("🏆 Achievement Rate", f"{achievement_rate:.1f}%", "SLA Performance")
                         c2.metric("On Time (Achieved)", f"{on_time} Tiket", "Sesuai Target")
                         c3.metric("Late (Breached)", f"{late} Tiket", "-Terlambat", delta_color="inverse")
-                        # UBAH DISINI: Menampilkan Total Tiket (Semua Data)
                         c4.metric("Total Tiket", f"{total_tickets} Tiket", "Total Data")
 
-                        # Donut Chart SLA
+                        #donut chart sla
                         if total_calculated > 0:
                             df_sla_chart = pd.DataFrame({
                                 'Status': ['On Time', 'Late'],
@@ -252,11 +232,9 @@ def run():
 
                         st.markdown("---")
 
-                        # --- 2. LAYOUT GRID BAWAH ---
                         col_left, col_right = st.columns(2)
 
                         with col_left:
-                            # TOP 5 BUSINESS CRITICALITY - SEVERITY
                             st.subheader("Top 5 Business Criticality - Severity")
                             if 'Businesscriticality-Severity' in df_final.columns:
                                 top_bc = df_final['Businesscriticality-Severity'].value_counts().head(5).reset_index()
@@ -265,7 +243,6 @@ def run():
                                                 title="Most Frequent Severity Combinations")
                                 st.plotly_chart(fig_bc, use_container_width=True)
                             
-                            # TOP 5 REQUESTED ITEMS
                             st.subheader("Top 5 Most Requested Items")
                             if col_item in df_final.columns:
                                 top_items = df_final[col_item].value_counts().head(5).reset_index()
@@ -276,7 +253,6 @@ def run():
                                 st.plotly_chart(fig_items, use_container_width=True)
 
                         with col_right:
-                            # TOP 4 CONTACT TYPE
                             st.subheader("Top 4 Contact Type Analysis")
                             if col_contact in df_final.columns:
                                 top_contact = df_final[col_contact].value_counts().head(4).reset_index()
@@ -285,27 +261,22 @@ def run():
                                                      title="Channel Pelaporan Terbanyak")
                                 st.plotly_chart(fig_contact, use_container_width=True)
 
-                            # --- DISINI DULUNYA ADA SERVICE OFFERING (SUDAH DIHAPUS) ---
+
                         st.markdown("---")
                         st.subheader("⚠️ Daftar Tiket Terlambat (Late)")
 
-                        # Filter DataFrame Display (yang kolomnya lengkap) untuk SLA == 0
                         df_late_full = df_display[df_display['SLA'] == 0]
 
                         if not df_late_full.empty:
                             st.info(f"Terdapat {len(df_late_full)} tiket yang melewati target SLA.")
-                            # Menampilkan seluruh kolom, dengan mode narrow/kompak (use_container_width=False)
                             st.dataframe(df_late_full, use_container_width=False)
                         else:
                             st.success(" Tidak ada tiket yang terlambat.")
 
                     with tab2:
-                        # --- DATA PREVIEW TABLE (SEMPIT/KOMPAK) ---
                         st.subheader("📄 Data Preview (Excel Format)")
-                        # use_container_width=False agar tabel tidak melebar
                         st.dataframe(df_display, use_container_width=False)
 
-                    # --- DOWNLOAD BUTTON ---
                     st.markdown("### 📥 Download Report")
                     csv = df_display.to_csv(index=False, sep=';', decimal=',').encode('utf-8')
                     st.download_button("Download Hasil (.csv)", csv, "SLA_Dashboard_Report.csv", "text/csv")
@@ -313,7 +284,6 @@ def run():
                 except Exception as e:
                     st.error(f"Error Proses: {e}")
             else:
-                # Tampilkan tabel awal juga dengan mode sempit
                 st.dataframe(df_main, use_container_width=False)
 
         except Exception as e:
